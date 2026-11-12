@@ -37,15 +37,22 @@ def get_readonly_engine() -> Engine:
 
 
 def extract_schema(
-    engine: Engine | None = None,
+    engine: Engine | str | None = None,
     sample_rows_count: int = 3,
 ) -> DatabaseSchema:
     """
     Extract schema metadata (tables, columns, PK, FK, and sample rows)
     using SQLAlchemy inspect over the read-only database connection.
     Strictly filters out any column listed in settings.BLOCKED_COLUMNS.
+    Accepts an Engine instance, a database URL string, or None (defaults to readonly engine).
     """
-    eng = engine or get_readonly_engine()
+    if isinstance(engine, str):
+        eng = create_engine(engine, pool_pre_ping=True)
+    elif engine is None:
+        eng = get_readonly_engine()
+    else:
+        eng = engine
+
     inspector = inspect(eng)
     table_names = inspector.get_table_names(schema="public")
 
