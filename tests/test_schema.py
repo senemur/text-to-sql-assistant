@@ -1,3 +1,4 @@
+import pytest
 from app.config import settings
 from app.schema import (
     ColumnInfo,
@@ -8,6 +9,7 @@ from app.schema import (
 )
 
 
+@pytest.mark.integration
 def test_schema_extract_from_database() -> None:
     """Verify extract_schema connects via read-only role and reflects Chinook schema."""
     schema = extract_schema(sample_rows_count=3)
@@ -41,6 +43,7 @@ def test_schema_extract_from_database() -> None:
     assert len(album_tbl.sample_rows) <= 3
 
 
+@pytest.mark.integration
 def test_blocked_columns_never_in_schema_or_sample_rows() -> None:
     """Verify blocked columns are completely purged from metadata and sample rows."""
     schema = extract_schema(sample_rows_count=3)
@@ -63,6 +66,7 @@ def test_blocked_columns_never_in_schema_or_sample_rows() -> None:
                 ), f"Blocked column '{blocked_col}' was found in sample rows of {table_name}"
 
 
+@pytest.mark.integration
 def test_schema_to_prompt_excludes_blocked_columns() -> None:
     """Verify that schema_to_prompt generates prompt text completely free of blocked columns."""
     schema = extract_schema(sample_rows_count=3)

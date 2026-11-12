@@ -39,3 +39,6 @@ asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore::SyntaxWarning:google.genai.*",
 ]
+markers = [
+    "integration: tests requiring live PostgreSQL database connection",
+]

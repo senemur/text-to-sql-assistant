@@ -9,6 +9,7 @@ A robust, enterprise-grade Text-to-SQL system designed with defense-in-depth saf
 - **Web Framework:** FastAPI, Uvicorn
 - **UI:** Streamlit
 - **Database & ORM:** PostgreSQL 16 (Chinook sample database), SQLAlchemy 2
+- **LLM Provider:** Gemini (swappable via `call_llm` in `app/generator.py`)
 - **Query Parser & Validator:** `sqlglot`
 - **Data Validation & Settings:** Pydantic v2, `pydantic-settings`
 - **Testing:** `pytest`, `pytest-asyncio`
