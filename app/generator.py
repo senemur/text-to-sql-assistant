@@ -38,7 +38,10 @@ def call_llm(system: str, user: str) -> str:
             "GEMINI_API_KEY is not set. Please provide your Gemini API key in the .env file."
         )
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(api_version="v1beta"),
+    )
     response = client.models.generate_content(
         model=settings.LLM_MODEL,
         contents=user,
