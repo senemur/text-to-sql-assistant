@@ -1,4 +1,5 @@
 from typing import Literal
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +22,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg2://postgres:postgres@localhost:5432/chinook"
     )
 
-    # Read-only user (used for LLM queries)
+    # Read-only user (Strictly used for LLM queries & schema reflection)
     DB_READONLY_USER: str = "llm_readonly"
     DB_READONLY_PASSWORD: str = "readonly_secret"
     DATABASE_URL_READONLY: str = (
@@ -33,17 +34,28 @@ class Settings(BaseSettings):
     ROW_CAP: int = 100
     MAX_RETRIES: int = 2
 
-    # LLM Settings
-    LLM_PROVIDER: Literal["gemini", "openai", "mock"] = "gemini"
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
+    # LLM Settings (Gemini)
+    LLM_PROVIDER: Literal["gemini", "mock"] = "gemini"
+    LLM_MODEL: str = Field(default="gemini-2.5-flash", alias="LLM_MODEL")
+    GEMINI_API_KEY: str = Field(default="", alias="GEMINI_API_KEY")
+    GOOGLE_API_KEY: str = Field(default="", alias="GOOGLE_API_KEY")
+
+    # Sensitive/blocked columns config:
+    # customer: email, phone, fax, address, postal_code
+    # employee: email, phone, fax, address, birth_date
+    BLOCKED_COLUMNS: dict[str, set[str]] = {
+        "customer": {"email", "phone", "fax", "address", "postal_code"},
+        "employee": {"email", "phone", "fax", "address", "birth_date"},
+    }
 
     # API and UI
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     STREAMLIT_PORT: int = 8501
+
+    @property
+    def effective_api_key(self) -> str:
+        return self.GEMINI_API_KEY or self.GOOGLE_API_KEY
 
 
 settings = Settings()

@@ -8,7 +8,6 @@ dependencies = [
     "fastapi>=0.110.0",
     "google-genai>=0.1.1",
     "httpx>=0.27.0",
-    "openai>=1.14.0",
     "psycopg2-binary>=2.9.9",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
@@ -37,3 +36,6 @@ pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::SyntaxWarning:google.genai.*",
+]
