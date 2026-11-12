@@ -29,7 +29,8 @@ def test_docker_compose_configuration() -> None:
     postgres_svc = compose["services"]["postgres"]
 
     assert "ports" in postgres_svc
-    assert "5432:5432" in postgres_svc["ports"]
+    ports = postgres_svc["ports"]
+    assert any("5432" in p for p in ports)
 
     env = postgres_svc.get("environment", {})
     assert env.get("POSTGRES_DB") == "chinook"
