@@ -48,6 +48,21 @@ class Settings(BaseSettings):
         "employee": {"email", "phone", "fax", "address", "birth_date"},
     }
 
+    # Chinook database table allowlist
+    CHINOOK_TABLES: set[str] = {
+        "album",
+        "artist",
+        "customer",
+        "employee",
+        "genre",
+        "invoice",
+        "invoice_line",
+        "media_type",
+        "playlist",
+        "playlist_track",
+        "track",
+    }
+
     # API and UI
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
