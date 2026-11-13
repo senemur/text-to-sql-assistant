@@ -1,0 +1,26 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Copy dependency specifications
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies using uv sync
+RUN uv sync --frozen --no-dev
+
+# Copy application source code
+COPY app/ ./app/
+COPY ui/ ./ui/
+COPY eval/ ./eval/
+COPY README.md ./
+
+# Place .venv binaries in PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8000 8501
+
+CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]

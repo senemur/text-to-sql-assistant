@@ -90,24 +90,36 @@ Copy the sample environment file:
 cp .env.example .env
 ```
 
-### 4. Start PostgreSQL with Chinook & Read-Only Role
+### 4. Start Full Stack with Docker Compose
 
-Start the database container using Docker Compose:
-
-```powershell
-docker compose up -d
-```
-
-Verify that the Chinook tables and read-only role were initialized:
+Start PostgreSQL, FastAPI backend, and Streamlit UI together:
 
 ```powershell
-docker compose exec -T postgres psql -U postgres -d chinook -c "\du llm_readonly"
-docker compose exec -T postgres psql -U postgres -d chinook -c "\dt"
+docker compose up -d --build
 ```
 
-### 5. Run Verification Tests
+- **Streamlit UI:** [http://localhost:8501](http://localhost:8501)
+- **FastAPI Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
 
-Run the test suite using `uv`:
+### 5. Running Locally with UV
+
+Alternatively, run services locally on your host:
+
+```powershell
+# 1. Start database
+docker compose up -d postgres
+
+# 2. Start FastAPI server
+uv run uvicorn app.api:app --host 0.0.0.0 --port 8000 --reload
+
+# 3. In another terminal, start Streamlit UI
+uv run streamlit run ui/streamlit_app.py
+```
+
+### 6. Run Test Suite
+
+Run all 115 unit and integration tests:
 
 ```powershell
 uv run pytest

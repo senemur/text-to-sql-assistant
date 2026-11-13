@@ -18,5 +18,43 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: text2sql-api
+    restart: unless-stopped
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=chinook
+      - DATABASE_URL_READONLY=postgresql+psycopg2://llm_readonly:readonly_secret@postgres:5432/chinook
+      - DATABASE_URL_ADMIN=postgresql+psycopg2://postgres:postgres@postgres:5432/chinook
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.5-flash}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - API_PORT=8000
+      - STREAMLIT_ORIGIN=http://localhost:8501
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: text2sql-ui
+    restart: unless-stopped
+    command: streamlit run ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+
 volumes:
   postgres_data:

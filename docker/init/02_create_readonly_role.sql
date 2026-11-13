@@ -47,8 +47,11 @@ GRANT SELECT (
 -- Grant SELECT on any future tables in public schema
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO llm_readonly;
 
--- Enforce hard statement timeout of 5 seconds for llm_readonly
+-- Enforce hard execution and session limits for llm_readonly
 ALTER ROLE llm_readonly SET statement_timeout = '5s';
+ALTER ROLE llm_readonly SET default_transaction_read_only = on;
+ALTER ROLE llm_readonly SET lock_timeout = '2s';
+ALTER ROLE llm_readonly SET idle_in_transaction_session_timeout = '10s';
 
 -- Explicitly revoke table and schema creation privileges
 REVOKE CREATE ON SCHEMA public FROM llm_readonly;

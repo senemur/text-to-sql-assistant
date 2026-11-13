@@ -4,7 +4,25 @@ from app.config import settings
 
 
 class ValidationError(Exception):
-    """Raised when an SQL query fails safety or AST validation rules."""
+    """Base exception for SQL query validation failures."""
+    pass
+
+
+class PolicyViolationError(ValidationError):
+    """
+    Raised when an SQL query violates security policies:
+    - Blocked sensitive column access
+    - Disallowed table, schema, or table-valued function
+    - Forbidden function calls
+    - Non-SELECT/UNION statements or DDL/DML/Locking clauses
+    - Whole-row references or wildcards on sensitive tables
+    - CTE shadowing of base database tables
+    """
+    pass
+
+
+class QuerySyntaxError(ValidationError):
+    """Raised when an SQL query has syntax errors that can be retried by the LLM."""
     pass
 
 
@@ -85,30 +103,30 @@ def validate_sql(
     """
     cleaned_sql = sql.strip()
     if not cleaned_sql:
-        raise ValidationError("Empty SQL query.")
+        raise QuerySyntaxError("Empty SQL query.")
 
     # 1. Parse statement(s)
     try:
         statements = sqlglot.parse(cleaned_sql, read=dialect)
     except Exception as exc:
-        raise ValidationError(f"SQL Syntax Error: {exc}") from exc
+        raise QuerySyntaxError(f"SQL Syntax Error: {exc}") from exc
 
     if not statements:
-        raise ValidationError("No valid SQL statement found.")
+        raise QuerySyntaxError("No valid SQL statement found.")
 
     if len(statements) > 1:
-        raise ValidationError(
+        raise PolicyViolationError(
             f"Multi-statement execution is forbidden. Found {len(statements)} statements."
         )
 
     ast = statements[0]
     if ast is None:
-        raise ValidationError("Failed to parse SQL statement.")
+        raise QuerySyntaxError("Failed to parse SQL statement.")
 
     # 2. Root statement must be read-only query
     allowed_roots = (exp.Select, exp.Union, exp.Intersect, exp.Except)
     if not isinstance(ast, allowed_roots):
-        raise ValidationError(
+        raise PolicyViolationError(
             f"Only read-only query statements are allowed. Got: {type(ast).__name__}"
         )
 
@@ -116,7 +134,7 @@ def validate_sql(
     for expr_type in FORBIDDEN_EXPRESSIONS:
         found = ast.find(expr_type)
         if found:
-            raise ValidationError(
+            raise PolicyViolationError(
                 f"Forbidden statement or clause '{expr_type.__name__}' detected in query."
             )
 
@@ -128,7 +146,7 @@ def validate_sql(
             else func.key.lower()
         )
         if func_name and func_name not in SAFE_FUNCTIONS:
-            raise ValidationError(
+            raise PolicyViolationError(
                 f"Forbidden function call '{func_name}()' is not in the safe functions allowlist."
             )
 
@@ -143,7 +161,7 @@ def validate_sql(
     shadowed = cte_names & base_tables_normalized
     if shadowed:
         shadowed_str = ", ".join(sorted(shadowed))
-        raise ValidationError(
+        raise PolicyViolationError(
             f"CTE name '{shadowed_str}' shadows an existing database table, which is prohibited."
         )
     effective_allowed = base_tables_normalized | cte_names
@@ -154,13 +172,13 @@ def validate_sql(
     for table_node in ast.find_all(exp.Table):
         # Reject table-valued functions in FROM/JOIN (e.g. FROM pg_ls_dir('/'))
         if not isinstance(table_node.this, (exp.Identifier, exp.Var, str)):
-            raise ValidationError(
+            raise PolicyViolationError(
                 f"Table-valued functions or non-standard table expressions are prohibited: {table_node.sql(dialect)}"
             )
 
         tbl_name = table_node.name.lower()
         if not tbl_name:
-            raise ValidationError(
+            raise QuerySyntaxError(
                 f"Invalid or empty table reference in query: {table_node.sql(dialect)}"
             )
 
@@ -168,12 +186,12 @@ def validate_sql(
         if table_node.db:
             schema_name = table_node.db.lower()
             if schema_name != "public":
-                raise ValidationError(
+                raise PolicyViolationError(
                     f"Access to schema '{schema_name}' is forbidden. Only 'public' schema is allowed."
                 )
 
         if tbl_name not in effective_allowed:
-            raise ValidationError(
+            raise PolicyViolationError(
                 f"Table '{tbl_name}' is not in the allowed tables list."
             )
 
@@ -202,7 +220,7 @@ def validate_sql(
         col_name = col_node.name.lower()
         # If an unqualified identifier matches a restricted table's alias, it is a whole-row reference
         if not col_node.table and col_name in restricted_aliases:
-            raise ValidationError(
+            raise PolicyViolationError(
                 f"Whole-row reference '{col_name}' to restricted table "
                 f"'{restricted_aliases[col_name]}' is prohibited."
             )
@@ -215,14 +233,14 @@ def validate_sql(
         if table_qualifier:
             real_tbl = alias_map.get(table_qualifier, table_qualifier)
             if col_name in norm_blocked_cols.get(real_tbl, set()):
-                raise ValidationError(
+                raise PolicyViolationError(
                     f"Access to blocked sensitive column '{col_name}' on table '{real_tbl}' is prohibited."
                 )
         else:
             # Unqualified column: check against all referenced tables in query
             for tbl in referenced_tables:
                 if col_name in norm_blocked_cols.get(tbl, set()):
-                    raise ValidationError(
+                    raise PolicyViolationError(
                         f"Access to blocked sensitive column '{col_name}' on table '{tbl}' is prohibited."
                     )
 
@@ -234,7 +252,7 @@ def validate_sql(
             if isinstance(star_node.parent, exp.Count):
                 continue  # COUNT(*) is safe
             sensitive_list = ", ".join(sorted(sensitive_tables_present))
-            raise ValidationError(
+            raise PolicyViolationError(
                 f"Wildcard '*' projection is prohibited when sensitive tables ({sensitive_list}) "
                 f"are present in the query. Please specify explicit allowed columns."
             )

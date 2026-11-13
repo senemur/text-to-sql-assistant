@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     STREAMLIT_PORT: int = 8501
+    STREAMLIT_ORIGIN: str = "http://localhost:8501"
+    CORS_ORIGINS: list[str] = ["http://localhost:8501", "http://127.0.0.1:8501"]
+    RATE_LIMIT_PER_MINUTE: int = 10
 
     @property
     def effective_api_key(self) -> str:
