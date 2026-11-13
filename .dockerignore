@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+eval/attempts.jsonl
+eval/results/
+eval/cache.json
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.ruff_cache/

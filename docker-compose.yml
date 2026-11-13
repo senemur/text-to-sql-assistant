@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - ./docker/init:/docker-entrypoint-initdb.d:ro
       - postgres_data:/var/lib/postgresql/data
@@ -32,7 +32,6 @@ services:
       - DB_PORT=5432
       - DB_NAME=chinook
       - DATABASE_URL_READONLY=postgresql+psycopg2://llm_readonly:readonly_secret@postgres:5432/chinook
-      - DATABASE_URL_ADMIN=postgresql+psycopg2://postgres:postgres@postgres:5432/chinook
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gemini-2.5-flash}
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}

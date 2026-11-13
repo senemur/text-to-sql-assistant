@@ -51,11 +51,16 @@ def test_executor_runs_valid_query() -> None:
 
 @pytest.mark.integration
 def test_executor_detects_truncation() -> None:
-    """Verify execute_query marks truncated=True when row limit is reached."""
-    # Chinook has 275 artists, ask with max_limit=5
+    """Verify execute_query marks truncated=True only when an extra row exists."""
+    # Chinook has 275 artists, ask with max_limit=5 -> extra row exists -> truncated=True
     res = execute_query("SELECT artist_id, name FROM artist", max_limit=5)
     assert res.row_count == 5
     assert res.truncated is True
+
+    # When query returns exactly 3 rows and max_limit is 3, extra row does NOT exist -> truncated=False
+    res_exact = execute_query("SELECT artist_id, name FROM artist LIMIT 3", max_limit=3)
+    assert res_exact.row_count == 3
+    assert res_exact.truncated is False
 
 
 @pytest.mark.integration
@@ -154,6 +159,46 @@ def test_sanitize_error_message() -> None:
 # ==============================================================================
 # 2. SELF-CORRECTION LOOP & POLICY VIOLATION TESTS
 # ==============================================================================
+
+@patch("app.generator.call_llm")
+@patch("app.executor.execute_query")
+def test_insufficient_privilege_42501_blocks_immediately_without_retry(
+    mock_exec: MagicMock, mock_call: MagicMock, tmp_path: Path
+) -> None:
+    """Verify that PostgreSQL SQLSTATE 42501 maps to status='blocked' and NEVER triggers a retry."""
+    from sqlalchemy.exc import DBAPIError
+
+    mock_orig = MagicMock()
+    mock_orig.pgcode = "42501"
+    mock_orig.__str__.return_value = "ERROR: permission denied for table customer (SQLSTATE 42501)"
+    mock_exec.side_effect = DBAPIError("permission denied for table customer", params=None, orig=mock_orig)
+
+    mock_call.return_value = LLMResult(
+        text=json.dumps(
+            {
+                "sql": "SELECT email FROM customer;",
+                "explanation": "Trying direct query",
+                "needs_clarification": False,
+            }
+        ),
+        input_tokens=40,
+        output_tokens=15,
+        model="gemini-2.5-flash",
+    )
+
+    log_file = tmp_path / "privilege_test.jsonl"
+    result = run_pipeline(
+        question="Get all customer emails",
+        schema_prompt="Table: customer",
+        max_retries=2,
+        log_path=log_file,
+    )
+
+    assert result.status == "blocked"
+    assert result.attempts == 1
+    assert mock_call.call_count == 1  # Never retried!
+    assert "42501" in result.error or "denied" in result.error.lower() or "policy" in result.error.lower()
+
 
 @patch("app.generator.call_llm")
 def test_policy_violation_stops_immediately_without_retry(

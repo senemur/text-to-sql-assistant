@@ -6,17 +6,19 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Copy dependency specifications
-COPY pyproject.toml uv.lock ./
+# Copy dependency specifications and readme
+COPY pyproject.toml uv.lock README.md ./
 
-# Install dependencies using uv sync
-RUN uv sync --frozen --no-dev
+# Install dependencies using uv sync without installing project root yet
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application source code
 COPY app/ ./app/
 COPY ui/ ./ui/
 COPY eval/ ./eval/
-COPY README.md ./
+
+# Install the project itself
+RUN uv sync --frozen --no-dev
 
 # Place .venv binaries in PATH
 ENV PATH="/app/.venv/bin:$PATH"

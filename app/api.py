@@ -15,8 +15,11 @@ from app.executor import (
 )
 from app.schema import extract_schema, schema_to_prompt
 
+from datetime import datetime, timezone
+
 cached_schema_prompt: str = ""
 rate_limit_store: dict[str, list[float]] = {}
+daily_request_counts: dict[str, int] = {}
 
 
 @asynccontextmanager
@@ -81,22 +84,49 @@ class HealthResponse(BaseModel):
 
 
 def check_rate_limit(client_ip: str) -> None:
-    """In-memory rate limiter per client IP (10 requests/minute)."""
+    """
+    In-memory rate limiter:
+    1. Global daily request cap from DAILY_REQUEST_CAP (evicts past days).
+    2. Per-client-IP window limiter (evicts expired timestamps and stale client IPs).
+    """
     now = time.time()
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # 1. Enforce global daily request cap and evict past days
+    stale_days = [d for d in daily_request_counts if d != today_str]
+    for d in stale_days:
+        daily_request_counts.pop(d, None)
+
+    current_daily_count = daily_request_counts.get(today_str, 0)
+    if current_daily_count >= settings.DAILY_REQUEST_CAP:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Global daily request cap exceeded ({settings.DAILY_REQUEST_CAP} requests/day).",
+        )
+
+    # 2. Evict expired entries across all IPs to prevent memory leaks
     window = 60.0
-    timestamps = rate_limit_store.setdefault(client_ip, [])
+    stale_ips: list[str] = []
+    for ip, ts_list in list(rate_limit_store.items()):
+        active_ts = [t for t in ts_list if now - t < window]
+        if not active_ts:
+            stale_ips.append(ip)
+        else:
+            rate_limit_store[ip] = active_ts
 
-    # Filter out requests older than 60s
-    valid_timestamps = [t for t in timestamps if now - t < window]
-    rate_limit_store[client_ip] = valid_timestamps
+    for ip in stale_ips:
+        rate_limit_store.pop(ip, None)
 
-    if len(valid_timestamps) >= settings.RATE_LIMIT_PER_MINUTE:
+    # 3. Check current client's window
+    client_timestamps = rate_limit_store.setdefault(client_ip, [])
+    if len(client_timestamps) >= settings.RATE_LIMIT_PER_MINUTE:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Rate limit exceeded. Maximum {settings.RATE_LIMIT_PER_MINUTE} requests per minute.",
         )
 
-    valid_timestamps.append(now)
+    client_timestamps.append(now)
+    daily_request_counts[today_str] = current_daily_count + 1
 
 
 @app.get("/health", response_model=HealthResponse)

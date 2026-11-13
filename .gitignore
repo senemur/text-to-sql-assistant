@@ -21,6 +21,8 @@ build/
 htmlcov/
 eval/*.jsonl
 *.jsonl
+eval/cache.json
+eval/results/
 
 # IDE & OS
 .idea/

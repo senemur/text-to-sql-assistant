@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
-from app.api import app, rate_limit_store
+from app.api import app, daily_request_counts, rate_limit_store
 from app.executor import ExecutionResult, PipelineResult
 
 
@@ -9,6 +9,7 @@ from app.executor import ExecutionResult, PipelineResult
 def client() -> TestClient:
     """Create test client with cleared rate limiter."""
     rate_limit_store.clear()
+    daily_request_counts.clear()
     with TestClient(app) as test_client:
         yield test_client
 
@@ -131,3 +132,38 @@ def test_rate_limiter_blocks_excessive_requests(
     resp_blocked = client.post("/ask", json={"question": "Question 11"})
     assert resp_blocked.status_code == 429
     assert "Rate limit exceeded" in resp_blocked.text
+
+
+@patch("app.api.run_pipeline")
+def test_global_daily_request_cap_triggers_429(
+    mock_pipeline: MagicMock, client: TestClient
+) -> None:
+    """Verify exceeding DAILY_REQUEST_CAP raises 429 Too Many Requests."""
+    from datetime import datetime, timezone
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Simulate hitting the daily request limit
+    daily_request_counts[today_str] = 1000
+
+    resp = client.post("/ask", json={"question": "Another query"})
+    assert resp.status_code == 429
+    assert "Global daily request cap exceeded" in resp.text
+
+
+def test_rate_limiter_evicts_stale_ips() -> None:
+    """Verify check_rate_limit purges entries older than 60 seconds and cleans up stale IPs."""
+    import time
+    from app.api import check_rate_limit, daily_request_counts
+
+    daily_request_counts.clear()
+    rate_limit_store.clear()
+
+    # Insert a stale entry (timestamp 100 seconds ago)
+    old_time = time.time() - 100.0
+    rate_limit_store["192.168.1.50"] = [old_time]
+
+    # Calling check_rate_limit from a different IP should evict the stale IP
+    check_rate_limit("127.0.0.1")
+
+    assert "192.168.1.50" not in rate_limit_store
+    assert "127.0.0.1" in rate_limit_store

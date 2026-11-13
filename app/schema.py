@@ -1,5 +1,5 @@
 from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from app.config import settings
@@ -19,9 +19,9 @@ class ForeignKeyInfo(BaseModel):
 class TableInfo(BaseModel):
     name: str
     columns: list[ColumnInfo]
-    primary_keys: list[str]
-    foreign_keys: list[ForeignKeyInfo]
-    sample_rows: list[dict[str, Any]]
+    primary_keys: list[str] = Field(default_factory=list)
+    foreign_keys: list[ForeignKeyInfo] = Field(default_factory=list)
+    sample_rows: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DatabaseSchema(BaseModel):
@@ -127,10 +127,48 @@ def extract_schema(
     return DatabaseSchema(tables=tables)
 
 
-def schema_to_prompt(schema: DatabaseSchema) -> str:
+def retrieve_relevant_tables(
+    question: str,
+    schema: DatabaseSchema,
+    top_k: int = 4,
+) -> set[str]:
+    """
+    Retrieve top-k relevant tables using keyword score matching
+    against table names and column names.
+    """
+    import re
+    q_tokens = set(re.findall(r"\w+", question.lower()))
+    scores: dict[str, float] = {}
+
+    for tbl_name, tbl_info in schema.tables.items():
+        score = 0.0
+        # Exact table name match or plural match
+        if tbl_name in q_tokens or (tbl_name + "s") in q_tokens:
+            score += 5.0
+        # Column name matches
+        for col in tbl_info.columns:
+            if col.name in q_tokens:
+                score += 2.0
+            for part in col.name.split("_"):
+                if part in q_tokens:
+                    score += 1.0
+        scores[tbl_name] = score
+
+    sorted_tables = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    selected = [tbl for tbl, sc in sorted_tables[:top_k] if sc > 0]
+    if not selected:
+        selected = [tbl for tbl, _ in sorted_tables[:top_k]]
+    return set(selected)
+
+
+def schema_to_prompt(
+    schema: DatabaseSchema,
+    tables_filter: set[str] | list[str] | None = None,
+) -> str:
     """
     Format database schema into an LLM-ready prompt text.
     Strictly verifies that no blocked columns are included.
+    Optionally filters tables to a subset (tables_filter) for schema retrieval.
     """
     lines: list[str] = [
         "### PostgreSQL Database Schema (Chinook):",
@@ -138,7 +176,12 @@ def schema_to_prompt(schema: DatabaseSchema) -> str:
         "",
     ]
 
+    target_tables = set(tables_filter) if tables_filter is not None else None
+
     for tbl_name, tbl_info in sorted(schema.tables.items()):
+        if target_tables is not None and tbl_name not in target_tables:
+            continue
+
         blocked_set = settings.BLOCKED_COLUMNS.get(tbl_name, set())
         lines.append(f"Table: {tbl_name}")
 

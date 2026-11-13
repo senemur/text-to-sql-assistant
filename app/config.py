@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     STREAMLIT_ORIGIN: str = "http://localhost:8501"
     CORS_ORIGINS: list[str] = ["http://localhost:8501", "http://127.0.0.1:8501"]
     RATE_LIMIT_PER_MINUTE: int = 10
+    DAILY_REQUEST_CAP: int = Field(default=1000, alias="DAILY_REQUEST_CAP")
+
+    # Pricing for eval cost estimation (per 1M tokens)
+    # Gemini 2.5 Flash pricing: $0.075 / 1M input tokens, $0.30 / 1M output tokens
+    INPUT_TOKEN_PRICE_PER_M: float = 0.075
+    OUTPUT_TOKEN_PRICE_PER_M: float = 0.30
 
     @property
     def effective_api_key(self) -> str:

@@ -130,6 +130,9 @@ def sanitize_error_message(exc: Exception) -> str:
     if isinstance(exc, PolicyViolationError):
         return f"Policy Violation: {str(exc)}"
 
+    if is_insufficient_privilege(exc):
+        return "Security Policy Violation: Database access denied due to insufficient privileges (SQLSTATE 42501)."
+
     if isinstance(exc, QuerySyntaxError):
         return f"SQL Syntax Error: {str(exc)}"
 
@@ -168,6 +171,17 @@ def _format_cell_value(val: Any) -> Any:
     return val
 
 
+def is_insufficient_privilege(exc: Exception) -> bool:
+    """Check if exception represents PostgreSQL SQLSTATE 42501 (insufficient_privilege)."""
+    if isinstance(exc, DBAPIError) and hasattr(exc, "orig") and exc.orig is not None:
+        orig = exc.orig
+        pgcode = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+        if str(pgcode) == "42501":
+            return True
+    exc_str = str(exc).lower()
+    return "42501" in exc_str or "insufficient_privilege" in exc_str or "permission denied" in exc_str
+
+
 def execute_query(
     sql: str,
     engine: Engine | None = None,
@@ -177,37 +191,48 @@ def execute_query(
     Single public entry point for SQL query execution:
     1. Calls validate_and_format_sql(sql) and executes ONLY the returned rewritten SQL.
     2. Runs inside an explicit READ ONLY transaction with statement timeout.
-    3. Fetches up to max_limit + 1 rows using fetchmany to detect truncation.
-    4. Serializes Decimal as str, datetime as ISO 8601 string.
-    5. Returns ExecutionResult with columns, rows, truncated, and elapsed_ms.
+    3. Fetches up to max_limit + 1 rows using fetchmany; truncated is True only if the extra row exists.
+    4. Maps SQLSTATE 42501 (insufficient_privilege) to PolicyViolationError.
+    5. Serializes Decimal as str, datetime as ISO 8601 string.
+    6. Returns ExecutionResult with columns, rows, truncated, and elapsed_ms.
     """
     # Step 1: Validate & rewrite query (impossible to bypass)
-    validated_sql = validate_and_format_sql(sql, max_limit=max_limit)
+    # Validate with max_limit + 1 so we can retrieve the extra probe row to detect truncation
+    validated_sql = validate_and_format_sql(sql, max_limit=max_limit + 1)
 
     eng = engine or get_executor_engine()
     start_time = time.perf_counter()
 
-    with eng.connect() as conn:
-        with conn.begin():
-            # Enforce read-only transaction and statement timeout
-            conn.execute(text("SET TRANSACTION READ ONLY;"))
-            conn.execute(
-                text(f"SET LOCAL statement_timeout = '{settings.STATEMENT_TIMEOUT_MS}ms';")
-            )
+    try:
+        with eng.connect() as conn:
+            with conn.begin():
+                # Enforce read-only transaction and statement timeout
+                conn.execute(text("SET TRANSACTION READ ONLY;"))
+                conn.execute(
+                    text(f"SET LOCAL statement_timeout = '{settings.STATEMENT_TIMEOUT_MS}ms';")
+                )
 
-            result_proxy = conn.execute(text(validated_sql))
+                result_proxy = conn.execute(text(validated_sql))
 
-            columns: list[str] = (
-                list(result_proxy.keys()) if result_proxy.returns_rows else []
-            )
-            raw_rows = (
-                result_proxy.fetchmany(max_limit) if result_proxy.returns_rows else []
-            )
+                columns: list[str] = (
+                    list(result_proxy.keys()) if result_proxy.returns_rows else []
+                )
+                raw_rows = (
+                    result_proxy.fetchmany(max_limit + 1) if result_proxy.returns_rows else []
+                )
+    except Exception as exc:
+        if is_insufficient_privilege(exc):
+            raise PolicyViolationError(
+                "Database access denied: insufficient privileges (SQLSTATE 42501)."
+            ) from exc
+        raise
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-    # If results reached the row cap, mark as truncated
-    truncated = len(raw_rows) >= max_limit
+    # Truncated only if the extra (max_limit + 1)th row exists
+    truncated = len(raw_rows) > max_limit
+    if truncated:
+        raw_rows = raw_rows[:max_limit]
 
     rows: list[dict[str, Any]] = []
     for row in raw_rows:
@@ -271,22 +296,27 @@ def run_pipeline(
     max_retries: int = 2,
     engine: Engine | None = None,
     log_path: str | Path | None = None,
+    few_shot: bool = True,
+    self_correction: bool = True,
 ) -> PipelineResult:
     """
     Self-correction loop pipeline:
-    1. Invokes generate_sql to produce candidate SQLResponse.
+    1. Invokes generate_sql to produce candidate SQLResponse (supports few_shot flag).
     2. If needs_clarification is True, stops immediately without executing anything.
     3. Executes query via execute_query.
-    4. If PolicyViolationError: ends IMMEDIATELY with status="blocked", NOT sent back to LLM.
+    4. If PolicyViolationError or SQLSTATE 42501 (insufficient_privilege):
+       ends IMMEDIATELY with status="blocked", NOT sent back to LLM.
     5. On retryable errors (QuerySyntaxError or DB error), retries up to max_retries with sanitized error_feedback.
+       If self_correction is False, retries are disabled (max_retries=0).
     6. If retries exhausted, returns status="failed".
     7. Logs tokens, llm_ms, db_ms, and outcome to attempts.jsonl.
     """
     pipeline_start = time.perf_counter()
     last_error: str | None = None
     last_sql_response: SQLResponse | None = None
+    effective_retries = max_retries if self_correction else 0
 
-    for attempt in range(max_retries + 1):
+    for attempt in range(effective_retries + 1):
         attempt_num = attempt + 1
         attempt_start = time.perf_counter()
 
@@ -296,6 +326,7 @@ def run_pipeline(
             question=question,
             schema_prompt=schema_prompt,
             error_feedback=last_error,
+            few_shot=few_shot,
         )
         llm_ms = (time.perf_counter() - llm_start) * 1000.0
         last_sql_response = sql_response
@@ -430,6 +461,40 @@ def run_pipeline(
             )
 
         except Exception as db_err:
+            if is_insufficient_privilege(db_err):
+                # SQLSTATE 42501 (insufficient_privilege) terminates IMMEDIATELY with status="blocked".
+                # Never retried, never sent to the LLM.
+                sanitized_err = sanitize_error_message(db_err)
+                attempt_elapsed = (time.perf_counter() - attempt_start) * 1000.0
+                overall_elapsed = (time.perf_counter() - pipeline_start) * 1000.0
+
+                log_attempt(
+                    log_path=log_path,
+                    attempt=attempt_num,
+                    question=question,
+                    generated_sql=sql_response.sql,
+                    validated_sql=None,
+                    outcome="blocked",
+                    error=sanitized_err,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    model=model_name,
+                    llm_ms=llm_ms,
+                    db_ms=0.0,
+                    total_ms=attempt_elapsed,
+                )
+
+                return PipelineResult(
+                    status="blocked",
+                    question=question,
+                    final_sql=sql_response.sql,
+                    explanation=sql_response.explanation,
+                    result=None,
+                    error=sanitized_err,
+                    attempts=attempt_num,
+                    total_latency_ms=round(overall_elapsed, 2),
+                )
+
             # Retryable database execution error (unknown column, timeout, etc.)
             sanitized_err = sanitize_error_message(db_err)
             last_error = sanitized_err
@@ -454,7 +519,7 @@ def run_pipeline(
     overall_elapsed = (time.perf_counter() - pipeline_start) * 1000.0
     log_attempt(
         log_path=log_path,
-        attempt=max_retries + 1,
+        attempt=effective_retries + 1,
         question=question,
         generated_sql=last_sql_response.sql if last_sql_response else None,
         validated_sql=None,
@@ -470,6 +535,6 @@ def run_pipeline(
         explanation=last_sql_response.explanation if last_sql_response else None,
         result=None,
         error=last_error or "Maximum retry attempts exhausted.",
-        attempts=max_retries + 1,
+        attempts=effective_retries + 1,
         total_latency_ms=round(overall_elapsed, 2),
     )
