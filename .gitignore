@@ -19,6 +19,8 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+eval/*.jsonl
+*.jsonl
 
 # IDE & OS
 .idea/

@@ -41,8 +41,7 @@ GRANT SELECT (
     hire_date,
     city,
     state,
-    country,
-    postal_code
+    country
 ) ON employee TO llm_readonly;
 
 -- Grant SELECT on any future tables in public schema

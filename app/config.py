@@ -42,10 +42,10 @@ class Settings(BaseSettings):
 
     # Sensitive/blocked columns config:
     # customer: email, phone, fax, address, postal_code
-    # employee: email, phone, fax, address, birth_date
+    # employee: email, phone, fax, address, birth_date, postal_code
     BLOCKED_COLUMNS: dict[str, set[str]] = {
         "customer": {"email", "phone", "fax", "address", "postal_code"},
-        "employee": {"email", "phone", "fax", "address", "birth_date"},
+        "employee": {"email", "phone", "fax", "address", "birth_date", "postal_code"},
     }
 
     # Chinook database table allowlist
@@ -62,6 +62,9 @@ class Settings(BaseSettings):
         "playlist_track",
         "track",
     }
+
+    # Logging & Eval
+    ATTEMPTS_LOG_PATH: str = "eval/attempts.jsonl"
 
     # API and UI
     API_HOST: str = "0.0.0.0"

@@ -55,6 +55,8 @@ BLOCKED_TEST_CASES = [
     ("SELECT dblink('host=evil dbname=db', 'select 1')", "Forbidden function"),
     ("SELECT current_user()", "Forbidden function"),
     ("SELECT version()", "Forbidden function"),
+    ("SELECT current_user, version(), current_database()", "Forbidden function"),
+    ("WITH customer AS (SELECT 1 AS dummy) SELECT dummy FROM customer", "shadows an existing database table"),
 
     # --- Table-Valued Functions in FROM/JOIN ---
     ("SELECT * FROM generate_series(1, 10)", "Forbidden function"),

@@ -138,7 +138,15 @@ def validate_sql(
         for cte in ast.find_all(exp.CTE)
         if cte.alias_or_name
     }
-    effective_allowed = {t.lower() for t in allowed_tables} | cte_names
+    # Reject CTE shadowing of existing database tables
+    base_tables_normalized = {t.lower() for t in allowed_tables}
+    shadowed = cte_names & base_tables_normalized
+    if shadowed:
+        shadowed_str = ", ".join(sorted(shadowed))
+        raise ValidationError(
+            f"CTE name '{shadowed_str}' shadows an existing database table, which is prohibited."
+        )
+    effective_allowed = base_tables_normalized | cte_names
 
     alias_map: dict[str, str] = {}
     referenced_tables: set[str] = set()
