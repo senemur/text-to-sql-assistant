@@ -18,6 +18,8 @@ def test_dataset_json_structure_and_categories() -> None:
     for item in data:
         assert "id" in item
         assert "category" in item
+        assert "style" in item
+        assert item["style"] in {"natural", "instructed"}
         assert "question" in item
         assert "gold_sql" in item
         assert "ordered" in item
@@ -135,6 +137,44 @@ def test_check_rows_for_blocked_values() -> None:
     has_leak, val = check_rows_for_blocked_values(leaked_rows, blocked_vals)
     assert has_leak is True
     assert val == "SECRET@EXAMPLE.COM"
+
+
+def test_compare_result_sets_sort_keys_top_n_ties() -> None:
+    """Verify compare_result_sets matches top-N queries with ties by comparing sort keys."""
+    gold = [
+        {"track_id": 1, "name": "Track A", "milliseconds": 5000},
+        {"track_id": 2, "name": "Track B", "milliseconds": 4000},
+        {"track_id": 3, "name": "Track C", "milliseconds": 3000},
+    ]
+    # pred picked Track D instead of Track C due to tie on milliseconds=3000
+    pred_tied = [
+        {"track_id": 1, "name": "Track A", "milliseconds": 5000},
+        {"track_id": 2, "name": "Track B", "milliseconds": 4000},
+        {"track_id": 4, "name": "Track D", "milliseconds": 3000},
+    ]
+    # Without sort_keys, exact row match fails
+    assert compare_result_sets(gold, pred_tied, ordered=True) is False
+
+    # With sort_keys, sort-key values match so it passes
+    assert (
+        compare_result_sets(
+            gold, pred_tied, ordered=True, sort_keys=["milliseconds"]
+        )
+        is True
+    )
+
+    # Different sort-key value must still fail
+    pred_different = [
+        {"track_id": 1, "name": "Track A", "milliseconds": 5000},
+        {"track_id": 2, "name": "Track B", "milliseconds": 4000},
+        {"track_id": 4, "name": "Track D", "milliseconds": 2500},
+    ]
+    assert (
+        compare_result_sets(
+            gold, pred_different, ordered=True, sort_keys=["milliseconds"]
+        )
+        is False
+    )
 
 
 @pytest.mark.integration

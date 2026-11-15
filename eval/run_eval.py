@@ -130,16 +130,58 @@ def normalize_row(row: dict[str, Any] | list[Any] | tuple[Any, ...]) -> tuple[An
     return tuple(normalize_value(v) for v in values)
 
 
+def extract_sort_key_values(
+    rows: list[dict[str, Any]],
+    sort_keys: list[str],
+) -> list[tuple[Any, ...]] | None:
+    """
+    Extract normalized sort-key values from rows for top-N queries where ties are possible.
+    Matches column names case-insensitively or via common substring aliases.
+    """
+    if not rows or not sort_keys:
+        return None
+
+    first_row = rows[0]
+    if not isinstance(first_row, dict):
+        return None
+
+    col_map = {str(k).lower(): k for k in first_row.keys()}
+    resolved_keys = []
+    for sk in sort_keys:
+        sk_lower = sk.lower()
+        if sk_lower in col_map:
+            resolved_keys.append(col_map[sk_lower])
+        else:
+            matched_col = None
+            for col_lower, actual_col in col_map.items():
+                if sk_lower in col_lower or col_lower in sk_lower:
+                    matched_col = actual_col
+                    break
+            if matched_col:
+                resolved_keys.append(matched_col)
+            else:
+                return None
+
+    extracted: list[tuple[Any, ...]] = []
+    for r in rows:
+        tup = tuple(normalize_value(r.get(rk)) for rk in resolved_keys)
+        extracted.append(tup)
+    return extracted
+
+
 def compare_result_sets(
     gold_rows: list[dict[str, Any]],
     pred_rows: list[dict[str, Any]],
     ordered: bool = False,
+    sort_keys: list[str] | None = None,
 ) -> bool:
     """
     Compare two SQL result sets:
     - Ignores column names.
     - Compares numbers with tolerance.
     - If ordered is False, comparisons are order-insensitive multiset comparisons.
+    - If full match fails and sort_keys is provided (for top-N questions where ties are possible),
+      compares only the sort-key values.
     """
     if len(gold_rows) != len(pred_rows):
         return False
@@ -147,25 +189,50 @@ def compare_result_sets(
     norm_gold = [normalize_row(r) for r in gold_rows]
     norm_pred = [normalize_row(r) for r in pred_rows]
 
+    full_matched = False
     if ordered:
-        return norm_gold == norm_pred
-
-    try:
-        return sorted(norm_gold, key=lambda r: str(r)) == sorted(
-            norm_pred, key=lambda r: str(r)
-        )
-    except Exception:
-        unmatched = list(norm_pred)
-        for g_row in norm_gold:
-            matched = False
-            for i, p_row in enumerate(unmatched):
-                if g_row == p_row:
-                    unmatched.pop(i)
-                    matched = True
+        full_matched = (norm_gold == norm_pred)
+    else:
+        try:
+            full_matched = (
+                sorted(norm_gold, key=lambda r: str(r))
+                == sorted(norm_pred, key=lambda r: str(r))
+            )
+        except Exception:
+            unmatched = list(norm_pred)
+            for g_row in norm_gold:
+                matched = False
+                for i, p_row in enumerate(unmatched):
+                    if g_row == p_row:
+                        unmatched.pop(i)
+                        matched = True
+                        break
+                if not matched:
                     break
-            if not matched:
-                return False
-        return len(unmatched) == 0
+            else:
+                full_matched = len(unmatched) == 0
+
+    if full_matched:
+        return True
+
+    # If full row match failed but sort_keys are specified (for top-N queries with ties):
+    if sort_keys:
+        gold_sort_vals = extract_sort_key_values(gold_rows, sort_keys)
+        pred_sort_vals = extract_sort_key_values(pred_rows, sort_keys)
+        if gold_sort_vals is not None and pred_sort_vals is not None:
+            if ordered:
+                if gold_sort_vals == pred_sort_vals:
+                    return True
+            else:
+                try:
+                    if sorted(gold_sort_vals, key=lambda r: str(r)) == sorted(
+                        pred_sort_vals, key=lambda r: str(r)
+                    ):
+                        return True
+                except Exception:
+                    pass
+
+    return False
 
 
 def load_cache() -> dict[str, Any]:
@@ -215,6 +282,10 @@ def run_evaluation(
 
     results: list[dict[str, Any]] = []
     category_stats: dict[str, dict[str, Any]] = {}
+    style_stats: dict[str, dict[str, Any]] = {
+        "natural": {"total": 0, "correct": 0},
+        "instructed": {"total": 0, "correct": 0},
+    }
 
     total_tokens_in = 0
     total_tokens_out = 0
@@ -237,10 +308,16 @@ def run_evaluation(
     for i, item in enumerate(items, 1):
         q_id = item["id"]
         category = item["category"]
+        style = item.get("style", "natural")
         question = item["question"]
         gold_sql = item.get("gold_sql")
         ordered = item.get("ordered", False)
+        sort_keys = item.get("sort_keys")
         expected_status = item.get("expected_status", "success")
+
+        if style not in style_stats:
+            style_stats[style] = {"total": 0, "correct": 0}
+        style_stats[style]["total"] += 1
 
         if category not in category_stats:
             category_stats[category] = {
@@ -352,6 +429,7 @@ def run_evaluation(
                         gold_res.rows,
                         pipeline_res.result.rows,
                         ordered=ordered,
+                        sort_keys=sort_keys,
                     )
                     if matches:
                         is_correct = True
@@ -366,14 +444,16 @@ def run_evaluation(
 
         if is_correct:
             category_stats[category]["correct"] += 1
-            print(f"[{i:02d}/{len(items):02d}] PASS ({category}) - {question[:45]}...")
+            style_stats[style]["correct"] += 1
+            print(f"[{i:02d}/{len(items):02d}] PASS ({category}/{style}) - {question[:45]}...")
         else:
-            print(f"[{i:02d}/{len(items):02d}] FAIL ({category}) - {question[:45]}... [{failure_reason}]")
+            print(f"[{i:02d}/{len(items):02d}] FAIL ({category}/{style}) - {question[:45]}... [{failure_reason}]")
 
         results.append(
             {
                 "id": q_id,
                 "category": category,
+                "style": style,
                 "question": question,
                 "expected_status": expected_status,
                 "pipeline_status": pipeline_res.status,
@@ -429,6 +509,16 @@ def run_evaluation(
                 "failed": data["failed"],
             }
             for cat, data in category_stats.items()
+        },
+        "style_breakdown": {
+            st: {
+                "total": sdata["total"],
+                "correct": sdata["correct"],
+                "accuracy_pct": round((sdata["correct"] / sdata["total"]) * 100.0, 1)
+                if sdata["total"]
+                else 0.0,
+            }
+            for st, sdata in style_stats.items()
         },
         "results": results,
     }
@@ -486,7 +576,16 @@ def print_markdown_report(summary: dict[str, Any]) -> None:
         )
     print()
 
-    # 3. Failure Details List
+    # 3. Per-Style Breakdown Table
+    if "style_breakdown" in summary:
+        print("### Style Breakdown\n")
+        print("| Style | Total | Correct | Accuracy |")
+        print("|:---|:---|:---|:---|")
+        for st, sdata in summary["style_breakdown"].items():
+            print(f"| **{st.capitalize()}** | {sdata['total']} | {sdata['correct']} | **{sdata['accuracy_pct']}%** |")
+        print()
+
+    # 4. Failure Details List
     failures = [r for r in summary["results"] if not r["correct"]]
     print(f"### Failure Details ({len(failures)} total failures)\n")
     if not failures:

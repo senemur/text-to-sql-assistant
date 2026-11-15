@@ -270,8 +270,17 @@ def test_binary_unary_exemption_does_not_bypass_allowlist_attacks() -> None:
         "SELECT name FROM artist WHERE 1=1 AND pg_sleep(5) > 0",
         "SELECT pg_catalog.pg_sleep(5) FROM artist",
         "SELECT name FROM artist WHERE version() LIKE 'x%'",
+        "SELECT CASE WHEN pg_sleep(1) IS NULL THEN 1 ELSE 0 END FROM artist",
     ]
     for attack in attacks:
         with pytest.raises(PolicyViolationError):
             validate_and_format_sql(attack)
+
+
+def test_case_when_pg_sleep_raises_policy_violation() -> None:
+    """Explicitly verify CASE WHEN with nested pg_sleep raises PolicyViolationError."""
+    query = "SELECT CASE WHEN pg_sleep(1) IS NULL THEN 1 ELSE 0 END FROM artist"
+    with pytest.raises(PolicyViolationError):
+        validate_and_format_sql(query)
+
 
