@@ -62,6 +62,8 @@ SAFE_FUNCTIONS: set[str] = {
     "current_time",
     "greatest",
     "least",
+    "case",
+    "if",
 }
 
 FORBIDDEN_EXPRESSIONS: tuple[type[exp.Expression], ...] = (

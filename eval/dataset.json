@@ -34,9 +34,9 @@
   {
     "id": 5,
     "category": "simple_filter",
-    "question": "Find tracks that have unit price greater than 0.99.",
-    "gold_sql": "SELECT track_id, name, unit_price FROM track WHERE unit_price > 0.99 LIMIT 100;",
-    "ordered": false,
+    "question": "Find the first 10 tracks with a unit price greater than 0.99, ordered by unit price descending and track id ascending.",
+    "gold_sql": "SELECT track_id, name, unit_price FROM track WHERE unit_price > 0.99 ORDER BY unit_price DESC, track_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
@@ -66,33 +66,33 @@
   {
     "id": 9,
     "category": "join",
-    "question": "List each track name along with its album title.",
-    "gold_sql": "SELECT t.name AS track_name, al.title AS album_title FROM track t JOIN album al ON t.album_id = al.album_id LIMIT 100;",
-    "ordered": false,
+    "question": "List the first 10 tracks and their album titles, ordered by album title ascending and track id ascending.",
+    "gold_sql": "SELECT t.track_id, t.name AS track_name, al.title AS album_title FROM track t JOIN album al ON t.album_id = al.album_id ORDER BY al.title ASC, t.track_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
     "id": 10,
     "category": "join",
-    "question": "Show albums along with their artist name.",
-    "gold_sql": "SELECT al.title AS album_title, ar.name AS artist_name FROM album al JOIN artist ar ON al.artist_id = ar.artist_id LIMIT 100;",
-    "ordered": false,
+    "question": "List the first 10 albums along with their artist names, ordered by album title ascending and album id ascending.",
+    "gold_sql": "SELECT al.album_id, al.title AS album_title, ar.name AS artist_name FROM album al JOIN artist ar ON al.artist_id = ar.artist_id ORDER BY al.title ASC, al.album_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
     "id": 11,
     "category": "join",
-    "question": "List all invoices along with the customer's first name, last name, and billing country.",
-    "gold_sql": "SELECT i.invoice_id, c.first_name, c.last_name, i.billing_country, i.total FROM invoice i JOIN customer c ON i.customer_id = c.customer_id LIMIT 100;",
-    "ordered": false,
+    "question": "Show the top 10 highest total invoices with customer first name, last name, and billing country, ordered by total descending and invoice id ascending.",
+    "gold_sql": "SELECT i.invoice_id, c.first_name, c.last_name, i.billing_country, i.total FROM invoice i JOIN customer c ON i.customer_id = c.customer_id ORDER BY i.total DESC, i.invoice_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
     "id": 12,
     "category": "join",
-    "question": "Find track names and their corresponding genre names.",
-    "gold_sql": "SELECT t.name AS track_name, g.name AS genre_name FROM track t JOIN genre g ON t.genre_id = g.genre_id LIMIT 100;",
-    "ordered": false,
+    "question": "List the first 10 tracks with their genre names, ordered by genre name ascending and track id ascending.",
+    "gold_sql": "SELECT t.track_id, t.name AS track_name, g.name AS genre_name FROM track t JOIN genre g ON t.genre_id = g.genre_id ORDER BY g.name ASC, t.track_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
@@ -114,17 +114,17 @@
   {
     "id": 15,
     "category": "join",
-    "question": "List invoice line items with the track name and invoice total.",
-    "gold_sql": "SELECT il.invoice_line_id, t.name AS track_name, i.total FROM invoice_line il JOIN track t ON il.track_id = t.track_id JOIN invoice i ON il.invoice_id = i.invoice_id LIMIT 100;",
-    "ordered": false,
+    "question": "List the first 10 invoice lines with track name and invoice total, ordered by invoice total descending and invoice line id ascending.",
+    "gold_sql": "SELECT il.invoice_line_id, t.name AS track_name, i.total FROM invoice_line il JOIN track t ON il.track_id = t.track_id JOIN invoice i ON il.invoice_id = i.invoice_id ORDER BY i.total DESC, il.invoice_line_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
     "id": 16,
     "category": "join",
-    "question": "Find tracks and their media type names for tracks in genre id 1.",
-    "gold_sql": "SELECT t.track_id, t.name AS track_name, m.name AS media_type FROM track t JOIN media_type m ON t.media_type_id = m.media_type_id WHERE t.genre_id = 1 LIMIT 100;",
-    "ordered": false,
+    "question": "Find the first 10 tracks in genre id 1 with their media type names, ordered by track name ascending and track id ascending.",
+    "gold_sql": "SELECT t.track_id, t.name AS track_name, m.name AS media_type FROM track t JOIN media_type m ON t.media_type_id = m.media_type_id WHERE t.genre_id = 1 ORDER BY t.name ASC, t.track_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
@@ -226,9 +226,9 @@
   {
     "id": 29,
     "category": "subquery_cte",
-    "question": "Find tracks that have never been purchased.",
-    "gold_sql": "SELECT track_id, name FROM track WHERE track_id NOT IN (SELECT track_id FROM invoice_line) LIMIT 100;",
-    "ordered": false,
+    "question": "Find the first 10 tracks that have never been purchased, ordered by track name ascending and track id ascending.",
+    "gold_sql": "SELECT track_id, name FROM track WHERE track_id NOT IN (SELECT track_id FROM invoice_line) ORDER BY name ASC, track_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
@@ -250,9 +250,9 @@
   {
     "id": 32,
     "category": "subquery_cte",
-    "question": "List albums where all tracks are longer than 3 minutes (180000 ms).",
-    "gold_sql": "SELECT album_id, title FROM album WHERE album_id NOT IN (SELECT album_id FROM track WHERE milliseconds <= 180000) LIMIT 100;",
-    "ordered": false,
+    "question": "List the first 10 albums where all tracks are longer than 3 minutes (180000 ms), ordered by title ascending and album id ascending.",
+    "gold_sql": "SELECT album_id, title FROM album WHERE album_id NOT IN (SELECT album_id FROM track WHERE milliseconds <= 180000) ORDER BY title ASC, album_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
@@ -274,17 +274,17 @@
   {
     "id": 35,
     "category": "subquery_cte",
-    "question": "Find customers who have never made a purchase.",
-    "gold_sql": "SELECT customer_id, first_name, last_name FROM customer WHERE customer_id NOT IN (SELECT DISTINCT customer_id FROM invoice) LIMIT 100;",
-    "ordered": false,
+    "question": "Find the first 10 artists who have no albums, ordered by artist name ascending and artist id ascending.",
+    "gold_sql": "SELECT artist_id, name FROM artist WHERE artist_id NOT IN (SELECT DISTINCT artist_id FROM album) ORDER BY name ASC, artist_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
     "id": 36,
     "category": "subquery_cte",
-    "question": "List tracks whose unit price is higher than the average track unit price.",
-    "gold_sql": "SELECT track_id, name, unit_price FROM track WHERE unit_price > (SELECT AVG(unit_price) FROM track) LIMIT 100;",
-    "ordered": false,
+    "question": "Find the top 10 longest tracks whose unit price is higher than the average track unit price, ordered by milliseconds descending and track id ascending.",
+    "gold_sql": "SELECT track_id, name, milliseconds, unit_price FROM track WHERE unit_price > (SELECT AVG(unit_price) FROM track) ORDER BY milliseconds DESC, track_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {
@@ -306,9 +306,9 @@
   {
     "id": 39,
     "category": "date",
-    "question": "Find employees hired in or after 2020.",
-    "gold_sql": "SELECT employee_id, first_name, last_name, hire_date FROM employee WHERE hire_date >= '2020-01-01' LIMIT 100;",
-    "ordered": false,
+    "question": "Find employees hired in or after 2003, ordered by hire date ascending and employee id ascending.",
+    "gold_sql": "SELECT employee_id, first_name, last_name, hire_date FROM employee WHERE hire_date >= '2003-01-01' ORDER BY hire_date ASC, employee_id ASC LIMIT 10;",
+    "ordered": true,
     "expected_status": "success"
   },
   {

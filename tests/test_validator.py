@@ -1,5 +1,11 @@
 import pytest
-from app.validator import ValidationError, validate_and_format_sql, validate_sql
+from app.validator import (
+    PolicyViolationError,
+    QuerySyntaxError,
+    ValidationError,
+    validate_and_format_sql,
+    validate_sql,
+)
 from app.config import settings
 
 
@@ -231,3 +237,41 @@ def test_validate_sql_custom_parameters() -> None:
             blocked_columns=custom_blocked,
             max_limit=25,
         )
+
+
+def test_binary_unary_exemption_allows_valid_operators() -> None:
+    """
+    Verify valid SQL operators are allowed:
+    AND, OR, NOT, BETWEEN, IN, LIKE, IS NULL, comparisons, arithmetic, CASE WHEN.
+    """
+    valid_queries = [
+        "SELECT name FROM artist WHERE name IS NOT NULL AND artist_id > 0",
+        "SELECT name FROM artist WHERE artist_id = 1 OR artist_id = 2",
+        "SELECT name FROM artist WHERE NOT (artist_id = 1)",
+        "SELECT name FROM artist WHERE artist_id BETWEEN 1 AND 10",
+        "SELECT name FROM artist WHERE artist_id IN (1, 2, 3)",
+        "SELECT name FROM artist WHERE name LIKE 'A%'",
+        "SELECT name FROM artist WHERE artist_id + 10 > 20",
+        "SELECT CASE WHEN artist_id > 10 THEN 'high' ELSE 'low' END AS tag FROM artist",
+    ]
+    for q in valid_queries:
+        res = validate_and_format_sql(q)
+        assert res is not None
+        assert "LIMIT" in res
+
+
+def test_binary_unary_exemption_does_not_bypass_allowlist_attacks() -> None:
+    """
+    Verify that operator expressions do NOT bypass the function allowlist.
+    Dangerous function calls inside operators or comparisons must still be blocked.
+    """
+    attacks = [
+        "SELECT name FROM artist WHERE pg_sleep(1) IS NOT NULL",
+        "SELECT name FROM artist WHERE 1=1 AND pg_sleep(5) > 0",
+        "SELECT pg_catalog.pg_sleep(5) FROM artist",
+        "SELECT name FROM artist WHERE version() LIKE 'x%'",
+    ]
+    for attack in attacks:
+        with pytest.raises(PolicyViolationError):
+            validate_and_format_sql(attack)
+

@@ -2,7 +2,23 @@ import json
 from pathlib import Path
 import sys
 from typing import Any
+import sqlglot
+from sqlglot import exp
 from app.executor import execute_query
+
+
+def check_if_query_exceeds_limit(sql: str, row_count: int) -> tuple[bool, int]:
+    """Check if the query without LIMIT produces more rows than row_count."""
+    try:
+        ast = sqlglot.parse_one(sql, read="postgres")
+        ast.set("limit", None)
+        ast.set("fetch", None)
+        count_sql = f"SELECT COUNT(*) AS total FROM ({ast.sql('postgres')}) AS _unlimited_subq"
+        count_res = execute_query(count_sql, max_limit=1)
+        total_available = int(count_res.rows[0]["total"])
+        return (total_available > row_count, total_available)
+    except Exception:
+        return (False, row_count)
 
 
 def format_rows_preview(rows: list[dict[str, Any]], max_rows: int = 3) -> str:
@@ -22,10 +38,10 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
     """
     Execute all gold SQL queries with expected_status 'success' via the read-only connection.
     Flags:
-    - Execution errors
-    - Zero rows returned
-    - Exactly 100 rows returned (potential row truncation)
-    - Non-deterministic ordering when 100 rows returned and ordered=False
+    - Execution errors (ERROR)
+    - Zero rows returned (ERROR)
+    - Exactly 100 rows returned (WARNING - potential row truncation)
+    - ordered=false without ORDER BY returning > 1 row only if the full query exceeds the limit (WARNING)
     """
     path = Path(dataset_path)
     if not path.exists():
@@ -61,6 +77,13 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
             print()
             continue
 
+        has_order_by = False
+        try:
+            ast = sqlglot.parse_one(gold_sql, read="postgres")
+            has_order_by = ast.find(exp.Order) is not None
+        except Exception:
+            pass
+
         flags: list[str] = []
         try:
             res = execute_query(gold_sql, max_limit=100)
@@ -69,19 +92,26 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
             print("Preview:")
             print(format_rows_preview(res.rows, max_rows=3))
 
-            # Flag conditions
+            # 1. 0 rows is an ERROR
             if row_count == 0:
-                flags.append("[WARNING] Query returned 0 rows (empty result set).")
+                flags.append("[ERROR] Query returned 0 rows (empty result set).")
+                error_count += 1
                 zero_row_count += 1
+
+            # 2. Exactly 100 rows warning
             elif row_count == 100:
                 max_limit_count += 1
                 flags.append("[WARNING] Query returned exactly 100 rows (possible truncation).")
-                if not ordered:
+
+            # 3. ordered=false without ORDER BY returning > 1 row only if full query exceeds LIMIT
+            if not ordered and not has_order_by and row_count > 1:
+                exceeds, total_avail = check_if_query_exceeds_limit(gold_sql, row_count)
+                if exceeds:
                     flags.append(
-                        "[WARNING] ordered=false with 100 rows: Result set depends on non-deterministic row order!"
+                        f"[WARNING] ordered=false query without ORDER BY returns a subset of rows ({row_count} of {total_avail}); results depend on non-deterministic row order!"
                     )
 
-            if not flags:
+            if not any("[ERROR]" in f for f in flags) and not any("[WARNING]" in f for f in flags):
                 clean_count += 1
 
         except Exception as exc:
