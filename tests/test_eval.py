@@ -136,3 +136,12 @@ def test_check_rows_for_blocked_values() -> None:
     assert has_leak is True
     assert val == "SECRET@EXAMPLE.COM"
 
+
+@pytest.mark.integration
+def test_check_gold_queries_executes_without_errors() -> None:
+    """Verify check_gold_queries runs against Chinook DB and returns exit code 0."""
+    from eval.check_gold import check_gold_queries
+    exit_code = check_gold_queries("eval/dataset.json")
+    assert exit_code == 0
+
+

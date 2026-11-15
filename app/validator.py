@@ -140,6 +140,10 @@ def validate_sql(
 
     # 4. Safe function allowlist & reject table-valued functions
     for func in ast.find_all(exp.Func, exp.Anonymous):
+        # Skip operator expressions (e.g. AND, OR, NOT, +, -, =, etc.) which subclass Binary/Unary in sqlglot
+        if isinstance(func, (exp.Binary, exp.Unary)):
+            continue
+
         func_name = (
             str(func.this).lower()
             if isinstance(func, exp.Anonymous)
