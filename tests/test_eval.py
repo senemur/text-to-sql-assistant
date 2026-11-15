@@ -177,6 +177,45 @@ def test_compare_result_sets_sort_keys_top_n_ties() -> None:
     )
 
 
+def test_sort_key_comparison_fails_when_non_key_column_wrong_above_tie_boundary() -> None:
+    """
+    Verify top-N sort-key comparison FAILS when a non-key column is wrong
+    for any row strictly above the tie boundary cutoff.
+    """
+    gold = [
+        {"track_id": 1, "name": "Track A", "milliseconds": 5000},
+        {"track_id": 2, "name": "Track B", "milliseconds": 4000},
+        {"track_id": 3, "name": "Track C", "milliseconds": 3000},
+    ]
+    # Tie boundary cutoff is milliseconds=3000.
+    # Row 1 (milliseconds=5000) is strictly ABOVE the tie boundary.
+    # In pred_wrong_above, row 1 has a wrong track_id and name.
+    pred_wrong_above = [
+        {"track_id": 99, "name": "WRONG TRACK NAME", "milliseconds": 5000},
+        {"track_id": 2, "name": "Track B", "milliseconds": 4000},
+        {"track_id": 4, "name": "Track D", "milliseconds": 3000},
+    ]
+    assert (
+        compare_result_sets(
+            gold, pred_wrong_above, ordered=True, sort_keys=["milliseconds"]
+        )
+        is False
+    )
+
+    # Row 2 (milliseconds=4000) is also strictly ABOVE the tie boundary.
+    pred_wrong_row2 = [
+        {"track_id": 1, "name": "Track A", "milliseconds": 5000},
+        {"track_id": 88, "name": "WRONG TRACK B", "milliseconds": 4000},
+        {"track_id": 4, "name": "Track D", "milliseconds": 3000},
+    ]
+    assert (
+        compare_result_sets(
+            gold, pred_wrong_row2, ordered=True, sort_keys=["milliseconds"]
+        )
+        is False
+    )
+
+
 @pytest.mark.integration
 def test_check_gold_queries_executes_without_errors() -> None:
     """Verify check_gold_queries runs against Chinook DB and returns exit code 0."""

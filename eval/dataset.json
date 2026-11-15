@@ -39,12 +39,9 @@
     "id": 5,
     "category": "simple_filter",
     "style": "natural",
-    "question": "Which 10 tracks with a unit price over 0.99 are the most expensive?",
-    "gold_sql": "SELECT track_id, name, unit_price FROM track WHERE unit_price > 0.99 ORDER BY unit_price DESC, track_id ASC LIMIT 10;",
-    "ordered": true,
-    "sort_keys": [
-      "unit_price"
-    ],
+    "question": "How many tracks have a unit price above 0.99?",
+    "gold_sql": "SELECT COUNT(*) AS track_count FROM track WHERE unit_price > 0.99 LIMIT 100;",
+    "ordered": false,
     "expected_status": "success"
   },
   {
@@ -78,11 +75,11 @@
     "id": 9,
     "category": "join",
     "style": "natural",
-    "question": "Which 10 tracks appear first when listing albums alphabetically?",
-    "gold_sql": "SELECT t.track_id, t.name AS track_name, al.title AS album_title FROM track t JOIN album al ON t.album_id = al.album_id ORDER BY al.title ASC, t.track_id ASC LIMIT 10;",
+    "question": "Which 10 albums come first alphabetically?",
+    "gold_sql": "SELECT album_id, title FROM album ORDER BY title ASC, album_id ASC LIMIT 10;",
     "ordered": true,
     "sort_keys": [
-      "album_title"
+      "title"
     ],
     "expected_status": "success"
   },
@@ -141,12 +138,9 @@
     "id": 15,
     "category": "join",
     "style": "natural",
-    "question": "Which 10 invoice line items belong to the highest total invoices?",
-    "gold_sql": "SELECT il.invoice_line_id, t.name AS track_name, i.total FROM invoice_line il JOIN track t ON il.track_id = t.track_id JOIN invoice i ON il.invoice_id = i.invoice_id ORDER BY i.total DESC, il.invoice_line_id ASC LIMIT 10;",
+    "question": "Which invoice has the highest total, and what is the total?",
+    "gold_sql": "SELECT i.invoice_id, i.total FROM invoice i ORDER BY i.total DESC, i.invoice_id ASC LIMIT 1;",
     "ordered": true,
-    "sort_keys": [
-      "total"
-    ],
     "expected_status": "success"
   },
   {

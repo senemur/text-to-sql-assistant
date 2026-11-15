@@ -220,17 +220,41 @@ def compare_result_sets(
         gold_sort_vals = extract_sort_key_values(gold_rows, sort_keys)
         pred_sort_vals = extract_sort_key_values(pred_rows, sort_keys)
         if gold_sort_vals is not None and pred_sort_vals is not None:
+            # 1. Verify sort-key sequence matches
+            sort_keys_match = False
             if ordered:
-                if gold_sort_vals == pred_sort_vals:
-                    return True
+                sort_keys_match = (gold_sort_vals == pred_sort_vals)
             else:
                 try:
-                    if sorted(gold_sort_vals, key=lambda r: str(r)) == sorted(
-                        pred_sort_vals, key=lambda r: str(r)
-                    ):
-                        return True
+                    sort_keys_match = (
+                        sorted(gold_sort_vals, key=lambda r: str(r))
+                        == sorted(pred_sort_vals, key=lambda r: str(r))
+                    )
                 except Exception:
-                    pass
+                    sort_keys_match = False
+
+            if not sort_keys_match:
+                return False
+
+            # 2. Verify all rows ABOVE the tie boundary match in full (all non-key columns)
+            cutoff_sort_val = gold_sort_vals[-1]
+            for sk_val in set(gold_sort_vals):
+                if sk_val == cutoff_sort_val:
+                    continue  # At the tie boundary, candidate choices may vary
+                g_grp = [
+                    normalize_row(r)
+                    for r, sk in zip(gold_rows, gold_sort_vals)
+                    if sk == sk_val
+                ]
+                p_grp = [
+                    normalize_row(r)
+                    for r, sk in zip(pred_rows, pred_sort_vals)
+                    if sk == sk_val
+                ]
+                if sorted(g_grp, key=lambda r: str(r)) != sorted(p_grp, key=lambda r: str(r)):
+                    return False
+
+            return True
 
     return False
 
