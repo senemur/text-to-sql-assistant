@@ -174,6 +174,11 @@ Output:
 SYSTEM_PROMPT_TEMPLATE = SYSTEM_RULES + "\n" + FEW_SHOT_EXAMPLES
 
 
+def get_system_prompt(few_shot: bool = True) -> str:
+    """Return the system prompt with or without few-shot examples."""
+    return SYSTEM_RULES + "\n" + FEW_SHOT_EXAMPLES if few_shot else SYSTEM_RULES
+
+
 def build_user_prompt(
     question: str,
     schema_prompt: str,
@@ -212,9 +217,7 @@ def generate_sql(
     Optionally accepts error_feedback for self-correction retries,
     and few_shot flag to toggle few-shot demonstrations in the system prompt.
     """
-    system_prompt = (
-        SYSTEM_RULES + "\n" + FEW_SHOT_EXAMPLES if few_shot else SYSTEM_RULES
-    )
+    system_prompt = get_system_prompt(few_shot=few_shot)
     user_prompt = build_user_prompt(
         question=question,
         schema_prompt=schema_prompt,

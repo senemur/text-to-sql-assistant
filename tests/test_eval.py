@@ -99,3 +99,40 @@ def test_retrieve_relevant_tables() -> None:
     assert "artist" in retrieved
     assert "album" in retrieved
     assert "invoice" not in retrieved
+
+
+def test_compute_cache_key_hash() -> None:
+    """Verify cache key is deterministic SHA-256 and sensitive to all parameters."""
+    from eval.run_eval import compute_cache_key
+
+    k1 = compute_cache_key("cfg1", "model1", "sys1", "sch1", "q1")
+    k2 = compute_cache_key("cfg1", "model1", "sys1", "sch1", "q1")
+    assert k1 == k2
+    assert len(k1) == 64  # SHA-256 hexdigest length
+
+    # Changing any component changes the hash
+    assert k1 != compute_cache_key("cfg2", "model1", "sys1", "sch1", "q1")
+    assert k1 != compute_cache_key("cfg1", "model2", "sys1", "sch1", "q1")
+    assert k1 != compute_cache_key("cfg1", "model1", "sys2", "sch1", "q1")
+    assert k1 != compute_cache_key("cfg1", "model1", "sys1", "sch2", "q1")
+    assert k1 != compute_cache_key("cfg1", "model1", "sys1", "sch1", "q2")
+
+
+def test_check_rows_for_blocked_values() -> None:
+    """Verify detection of blocked values in result rows."""
+    from eval.run_eval import check_rows_for_blocked_values
+
+    blocked_vals = {"secret@example.com", "123 fake street"}
+
+    # Clean rows -> no leak
+    clean_rows = [{"first_name": "John", "total": "100"}]
+    has_leak, val = check_rows_for_blocked_values(clean_rows, blocked_vals)
+    assert has_leak is False
+    assert val is None
+
+    # Leaked row -> detected
+    leaked_rows = [{"first_name": "John", "email": "SECRET@EXAMPLE.COM"}]
+    has_leak, val = check_rows_for_blocked_values(leaked_rows, blocked_vals)
+    assert has_leak is True
+    assert val == "SECRET@EXAMPLE.COM"
+
