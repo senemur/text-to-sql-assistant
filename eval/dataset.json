@@ -294,8 +294,8 @@
     "id": 31,
     "category": "subquery_cte",
     "style": "natural",
-    "question": "Find customers who spent more than the average total invoice amount.",
-    "gold_sql": "SELECT first_name, last_name FROM customer WHERE customer_id IN (SELECT customer_id FROM invoice GROUP BY customer_id HAVING SUM(total) > (SELECT AVG(total) FROM invoice)) LIMIT 100;",
+    "question": "Find customers who spent more than the average customer.",
+    "gold_sql": "SELECT first_name, last_name FROM customer WHERE customer_id IN (SELECT customer_id FROM invoice GROUP BY customer_id HAVING SUM(total) > (SELECT AVG(cust_total) FROM (SELECT SUM(total) AS cust_total FROM invoice GROUP BY customer_id) AS sub)) ORDER BY customer_id ASC LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
