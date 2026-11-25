@@ -17,7 +17,7 @@ GRANT USAGE ON SCHEMA public TO llm_readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO llm_readonly;
 
 -- Column-level Least Privilege: Revoke table-level SELECT on sensitive tables
-REVOKE SELECT ON customer, employee FROM llm_readonly;
+REVOKE SELECT ON customer, employee, invoice FROM llm_readonly;
 
 -- Grant SELECT strictly on non-blocked columns of customer
 GRANT SELECT (
@@ -43,6 +43,17 @@ GRANT SELECT (
     state,
     country
 ) ON employee TO llm_readonly;
+
+-- Grant SELECT strictly on non-blocked columns of invoice
+GRANT SELECT (
+    invoice_id,
+    customer_id,
+    invoice_date,
+    billing_city,
+    billing_state,
+    billing_country,
+    total
+) ON invoice TO llm_readonly;
 
 -- Grant SELECT on any future tables in public schema
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO llm_readonly;

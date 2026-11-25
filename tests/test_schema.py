@@ -95,6 +95,14 @@ def test_schema_to_prompt_excludes_blocked_columns() -> None:
             f"- {col}" not in employee_section
         ), f"Employee blocked column '{col}' found in prompt: {employee_section}"
 
+    # Verify invoice blocked columns: billing_address, billing_postal_code
+    invoice_blocked = ["billing_address", "billing_postal_code"]
+    invoice_section = prompt.split("Table: invoice")[1].split("Table:")[0]
+    for col in invoice_blocked:
+        assert (
+            f"- {col}" not in invoice_section
+        ), f"Invoice blocked column '{col}' found in prompt: {invoice_section}"
+
 
 def test_schema_to_prompt_standalone_mock() -> None:
     """Verify schema_to_prompt works deterministically with synthetic TableInfo."""

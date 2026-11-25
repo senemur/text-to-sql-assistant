@@ -4,7 +4,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "List all genres.",
-    "gold_sql": "SELECT genre_id, name FROM genre ORDER BY genre_id LIMIT 100;",
+    "gold_sql": "SELECT name FROM genre LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -13,7 +13,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "Find all media types.",
-    "gold_sql": "SELECT media_type_id, name FROM media_type ORDER BY media_type_id LIMIT 100;",
+    "gold_sql": "SELECT name FROM media_type LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -22,7 +22,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "Show customers who live in Brazil.",
-    "gold_sql": "SELECT customer_id, first_name, last_name, country FROM customer WHERE country = 'Brazil' LIMIT 100;",
+    "gold_sql": "SELECT first_name, last_name, country FROM customer WHERE country = 'Brazil' LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -31,7 +31,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "List all playlists.",
-    "gold_sql": "SELECT playlist_id, name FROM playlist LIMIT 100;",
+    "gold_sql": "SELECT name FROM playlist LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -49,7 +49,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "Show invoices with a total greater than 15.",
-    "gold_sql": "SELECT invoice_id, customer_id, total FROM invoice WHERE total > 15 LIMIT 100;",
+    "gold_sql": "SELECT invoice_id, total FROM invoice WHERE total > 15 LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -58,7 +58,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "List all employees located in Calgary.",
-    "gold_sql": "SELECT employee_id, first_name, last_name, city FROM employee WHERE city = 'Calgary' LIMIT 100;",
+    "gold_sql": "SELECT first_name, last_name, city FROM employee WHERE city = 'Calgary' LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -67,7 +67,7 @@
     "category": "simple_filter",
     "style": "natural",
     "question": "Find all albums by artist id 1.",
-    "gold_sql": "SELECT album_id, title, artist_id FROM album WHERE artist_id = 1 LIMIT 100;",
+    "gold_sql": "SELECT title FROM album WHERE artist_id = 1 LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -88,7 +88,7 @@
     "category": "join",
     "style": "natural",
     "question": "Which 10 albums come first alphabetically, along with their artist names?",
-    "gold_sql": "SELECT al.album_id, al.title AS album_title, ar.name AS artist_name FROM album al JOIN artist ar ON al.artist_id = ar.artist_id ORDER BY al.title ASC, al.album_id ASC LIMIT 10;",
+    "gold_sql": "SELECT al.title AS album_title, ar.name AS artist_name FROM album al JOIN artist ar ON al.artist_id = ar.artist_id ORDER BY al.title ASC LIMIT 10;",
     "ordered": true,
     "sort_keys": [
       "album_title"
@@ -112,7 +112,7 @@
     "category": "join",
     "style": "instructed",
     "question": "List the first 10 tracks with their genre names, ordered by genre name ascending and track id ascending.",
-    "gold_sql": "SELECT t.track_id, t.name AS track_name, g.name AS genre_name FROM track t JOIN genre g ON t.genre_id = g.genre_id ORDER BY g.name ASC, t.track_id ASC LIMIT 10;",
+    "gold_sql": "SELECT t.name AS track_name, g.name AS genre_name FROM track t JOIN genre g ON t.genre_id = g.genre_id ORDER BY g.name ASC, t.track_id ASC LIMIT 10;",
     "ordered": true,
     "expected_status": "success"
   },
@@ -121,7 +121,7 @@
     "category": "join",
     "style": "natural",
     "question": "List tracks that belong to the playlist named 'Heavy Metal Classic'.",
-    "gold_sql": "SELECT t.track_id, t.name AS track_name FROM track t JOIN playlist_track pt ON t.track_id = pt.track_id JOIN playlist p ON pt.playlist_id = p.playlist_id WHERE p.name = 'Heavy Metal Classic' LIMIT 100;",
+    "gold_sql": "SELECT t.name AS track_name FROM track t JOIN playlist_track pt ON t.track_id = pt.track_id JOIN playlist p ON pt.playlist_id = p.playlist_id WHERE p.name = 'Heavy Metal Classic' LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -148,7 +148,7 @@
     "category": "join",
     "style": "instructed",
     "question": "Find the first 10 tracks in genre id 1 with their media type names, ordered by track name ascending and track id ascending.",
-    "gold_sql": "SELECT t.track_id, t.name AS track_name, m.name AS media_type FROM track t JOIN media_type m ON t.media_type_id = m.media_type_id WHERE t.genre_id = 1 ORDER BY t.name ASC, t.track_id ASC LIMIT 10;",
+    "gold_sql": "SELECT t.name AS track_name, m.name AS media_type FROM track t JOIN media_type m ON t.media_type_id = m.media_type_id WHERE t.genre_id = 1 ORDER BY t.name ASC, t.track_id ASC LIMIT 10;",
     "ordered": true,
     "expected_status": "success"
   },
@@ -244,7 +244,7 @@
     "category": "aggregation",
     "style": "natural",
     "question": "Find the top 5 customers who have spent the most in total.",
-    "gold_sql": "SELECT c.customer_id, c.first_name, c.last_name, SUM(i.total) AS total_spent FROM customer c JOIN invoice i ON c.customer_id = i.customer_id GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY total_spent DESC LIMIT 5;",
+    "gold_sql": "SELECT c.first_name, c.last_name, SUM(i.total) AS total_spent FROM customer c JOIN invoice i ON c.customer_id = i.customer_id GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY total_spent DESC LIMIT 5;",
     "ordered": true,
     "sort_keys": [
       "total_spent"
@@ -277,7 +277,7 @@
     "category": "subquery_cte",
     "style": "instructed",
     "question": "Find the first 10 tracks that have never been purchased, ordered by track name ascending and track id ascending.",
-    "gold_sql": "SELECT track_id, name FROM track WHERE track_id NOT IN (SELECT track_id FROM invoice_line) ORDER BY name ASC, track_id ASC LIMIT 10;",
+    "gold_sql": "SELECT name FROM track WHERE track_id NOT IN (SELECT track_id FROM invoice_line) ORDER BY name ASC, track_id ASC LIMIT 10;",
     "ordered": true,
     "expected_status": "success"
   },
@@ -295,7 +295,7 @@
     "category": "subquery_cte",
     "style": "natural",
     "question": "Find customers who spent more than the average total invoice amount.",
-    "gold_sql": "SELECT customer_id, first_name, last_name FROM customer WHERE customer_id IN (SELECT customer_id FROM invoice GROUP BY customer_id HAVING SUM(total) > (SELECT AVG(total) FROM invoice)) LIMIT 100;",
+    "gold_sql": "SELECT first_name, last_name FROM customer WHERE customer_id IN (SELECT customer_id FROM invoice GROUP BY customer_id HAVING SUM(total) > (SELECT AVG(total) FROM invoice)) LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -304,7 +304,7 @@
     "category": "subquery_cte",
     "style": "instructed",
     "question": "List the first 10 albums where all tracks are longer than 3 minutes (180000 ms), ordered by title ascending and album id ascending.",
-    "gold_sql": "SELECT album_id, title FROM album WHERE album_id NOT IN (SELECT album_id FROM track WHERE milliseconds <= 180000) ORDER BY title ASC, album_id ASC LIMIT 10;",
+    "gold_sql": "SELECT title FROM album WHERE album_id NOT IN (SELECT album_id FROM track WHERE milliseconds <= 180000) ORDER BY title ASC, album_id ASC LIMIT 10;",
     "ordered": true,
     "expected_status": "success"
   },
@@ -313,7 +313,7 @@
     "category": "subquery_cte",
     "style": "natural",
     "question": "Find the track with the longest duration.",
-    "gold_sql": "SELECT track_id, name, milliseconds FROM track WHERE milliseconds = (SELECT MAX(milliseconds) FROM track) LIMIT 1;",
+    "gold_sql": "SELECT name, milliseconds FROM track WHERE milliseconds = (SELECT MAX(milliseconds) FROM track) LIMIT 1;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -331,7 +331,7 @@
     "category": "subquery_cte",
     "style": "natural",
     "question": "Which 10 artists with no albums appear first alphabetically?",
-    "gold_sql": "SELECT artist_id, name FROM artist WHERE artist_id NOT IN (SELECT DISTINCT artist_id FROM album) ORDER BY name ASC, artist_id ASC LIMIT 10;",
+    "gold_sql": "SELECT name FROM artist WHERE artist_id NOT IN (SELECT DISTINCT artist_id FROM album) ORDER BY name ASC, artist_id ASC LIMIT 10;",
     "ordered": true,
     "sort_keys": [
       "name"
@@ -343,7 +343,7 @@
     "category": "subquery_cte",
     "style": "natural",
     "question": "Which 10 tracks are the longest among tracks priced above average?",
-    "gold_sql": "SELECT track_id, name, milliseconds, unit_price FROM track WHERE unit_price > (SELECT AVG(unit_price) FROM track) ORDER BY milliseconds DESC, track_id ASC LIMIT 10;",
+    "gold_sql": "SELECT name, milliseconds, unit_price FROM track WHERE unit_price > (SELECT AVG(unit_price) FROM track) ORDER BY milliseconds DESC, track_id ASC LIMIT 10;",
     "ordered": true,
     "sort_keys": [
       "milliseconds"
@@ -355,7 +355,7 @@
     "category": "date",
     "style": "natural",
     "question": "Show invoices from the year 2023.",
-    "gold_sql": "SELECT invoice_id, customer_id, invoice_date, total FROM invoice WHERE EXTRACT(YEAR FROM invoice_date) = 2023 LIMIT 100;",
+    "gold_sql": "SELECT invoice_id, invoice_date, total FROM invoice WHERE EXTRACT(YEAR FROM invoice_date) = 2023 LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },
@@ -373,7 +373,7 @@
     "category": "date",
     "style": "natural",
     "question": "Which employees were hired earliest in or after 2003? Show up to 10.",
-    "gold_sql": "SELECT employee_id, first_name, last_name, hire_date FROM employee WHERE hire_date >= '2003-01-01' ORDER BY hire_date ASC, employee_id ASC LIMIT 10;",
+    "gold_sql": "SELECT first_name, last_name, hire_date FROM employee WHERE hire_date >= '2003-01-01' ORDER BY hire_date ASC, employee_id ASC LIMIT 10;",
     "ordered": true,
     "sort_keys": [
       "hire_date"
@@ -403,7 +403,7 @@
     "category": "date",
     "style": "instructed",
     "question": "Show the latest 5 invoices ordered by date descending.",
-    "gold_sql": "SELECT invoice_id, customer_id, invoice_date, total FROM invoice ORDER BY invoice_date DESC LIMIT 5;",
+    "gold_sql": "SELECT invoice_id, invoice_date, total FROM invoice ORDER BY invoice_date DESC LIMIT 5;",
     "ordered": true,
     "expected_status": "success"
   },

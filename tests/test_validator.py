@@ -43,6 +43,12 @@ BLOCKED_TEST_CASES = [
     ("SELECT e.fax FROM employee e", "blocked sensitive column"),
     ("SELECT e.address FROM employee e", "blocked sensitive column"),
     ("SELECT e.birth_date FROM employee e", "blocked sensitive column"),
+
+    # --- Invoice Blocked Columns ---
+    ("SELECT i.billing_address FROM invoice i", "blocked sensitive column"),
+    ("SELECT i.billing_postal_code FROM invoice i", "blocked sensitive column"),
+    ("SELECT total FROM invoice WHERE billing_address LIKE '%Street%'", "blocked sensitive column"),
+    ("SELECT total FROM invoice ORDER BY billing_postal_code", "blocked sensitive column"),
     ("SELECT first_name FROM employee ORDER BY birth_date", "blocked sensitive column"),
     ("SELECT e FROM employee e", "Whole-row reference"),
     ("SELECT employee FROM employee", "Whole-row reference"),

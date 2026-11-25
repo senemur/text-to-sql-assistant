@@ -43,9 +43,11 @@ class Settings(BaseSettings):
     # Sensitive/blocked columns config:
     # customer: email, phone, fax, address, postal_code
     # employee: email, phone, fax, address, birth_date, postal_code
+    # invoice: billing_address, billing_postal_code
     BLOCKED_COLUMNS: dict[str, set[str]] = {
         "customer": {"email", "phone", "fax", "address", "postal_code"},
         "employee": {"email", "phone", "fax", "address", "birth_date", "postal_code"},
+        "invoice": {"billing_address", "billing_postal_code"},
     }
 
     # Chinook database table allowlist

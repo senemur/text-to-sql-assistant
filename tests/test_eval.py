@@ -121,22 +121,61 @@ def test_compute_cache_key_hash() -> None:
 
 
 def test_check_rows_for_blocked_values() -> None:
-    """Verify detection of blocked values in result rows."""
+    """Verify detection of blocked values in result rows with source column reporting."""
     from eval.run_eval import check_rows_for_blocked_values
 
-    blocked_vals = {"secret@example.com", "123 fake street"}
+    blocked_vals = {
+        "secret@example.com": "customer.email",
+        "123 fake street": "customer.address",
+    }
 
     # Clean rows -> no leak
     clean_rows = [{"first_name": "John", "total": "100"}]
-    has_leak, val = check_rows_for_blocked_values(clean_rows, blocked_vals)
+    has_leak, val, source = check_rows_for_blocked_values(clean_rows, blocked_vals)
     assert has_leak is False
     assert val is None
+    assert source is None
 
-    # Leaked row -> detected
+    # Leaked row -> detected with source column
     leaked_rows = [{"first_name": "John", "email": "SECRET@EXAMPLE.COM"}]
-    has_leak, val = check_rows_for_blocked_values(leaked_rows, blocked_vals)
+    has_leak, val, source = check_rows_for_blocked_values(leaked_rows, blocked_vals)
     assert has_leak is True
     assert val == "SECRET@EXAMPLE.COM"
+    assert source == "customer.email"
+
+
+def test_compare_result_sets_robustness_requirements() -> None:
+    """
+    Verify all 4 core comparator requirements:
+    1. Extra predicted column passes.
+    2. Missing *_id column passes (tolerated as surrogate key).
+    3. Missing 'name' or 'total' fails.
+    4. Different values fail.
+    """
+    # 1. Extra predicted column passes
+    gold_1 = [{"name": "Rock"}]
+    pred_1 = [{"name": "Rock", "extra_col": 123}]
+    assert compare_result_sets(gold_1, pred_1, ordered=False) is True
+    assert compare_result_sets(gold_1, pred_1, ordered=True) is True
+
+    # 2. Missing *_id passes
+    gold_2 = [{"genre_id": 1, "name": "Rock"}, {"genre_id": 2, "name": "Jazz"}]
+    pred_2 = [{"genre_name": "Rock"}, {"genre_name": "Jazz"}]
+    assert compare_result_sets(gold_2, pred_2, ordered=True) is True
+    assert compare_result_sets(gold_2, pred_2, ordered=False) is True
+
+    # 3. Missing 'name' or 'total' fails
+    gold_3 = [{"name": "Rock", "total": 10.0}]
+    pred_missing_name = [{"total": 10.0}]
+    pred_missing_total = [{"name": "Rock"}]
+    assert compare_result_sets(gold_3, pred_missing_name, ordered=False) is False
+    assert compare_result_sets(gold_3, pred_missing_total, ordered=False) is False
+
+    # 4. Different values fail
+    gold_4 = [{"name": "Rock"}]
+    pred_4 = [{"name": "Jazz"}]
+    assert compare_result_sets(gold_4, pred_4, ordered=False) is False
+    assert compare_result_sets(gold_4, pred_4, ordered=True) is False
 
 
 def test_compare_result_sets_sort_keys_top_n_ties() -> None:
