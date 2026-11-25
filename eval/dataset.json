@@ -88,7 +88,7 @@
     "category": "join",
     "style": "natural",
     "question": "Which 10 albums come first alphabetically, along with their artist names?",
-    "gold_sql": "SELECT al.title AS album_title, ar.name AS artist_name FROM album al JOIN artist ar ON al.artist_id = ar.artist_id ORDER BY al.title ASC LIMIT 10;",
+    "gold_sql": "SELECT al.title AS album_title, ar.name AS artist_name FROM album al JOIN artist ar ON al.artist_id = ar.artist_id ORDER BY al.title ASC, al.album_id ASC LIMIT 10;",
     "ordered": true,
     "sort_keys": [
       "album_title"
@@ -313,8 +313,11 @@
     "category": "subquery_cte",
     "style": "natural",
     "question": "Find the track with the longest duration.",
-    "gold_sql": "SELECT name, milliseconds FROM track WHERE milliseconds = (SELECT MAX(milliseconds) FROM track) LIMIT 1;",
+    "gold_sql": "SELECT name, milliseconds FROM track WHERE milliseconds = (SELECT MAX(milliseconds) FROM track) ORDER BY track_id ASC LIMIT 1;",
     "ordered": false,
+    "sort_keys": [
+      "milliseconds"
+    ],
     "expected_status": "success"
   },
   {

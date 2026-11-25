@@ -59,6 +59,7 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
     zero_row_count = 0
     max_limit_count = 0
     clean_count = 0
+    id_row_counts: list[tuple[int, str, int, str]] = []
 
     for item in success_items:
         q_id = item["id"]
@@ -74,6 +75,7 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
         if not gold_sql:
             print("  [ERROR] Expected status is 'success' but gold_sql is missing/empty!")
             error_count += 1
+            id_row_counts.append((q_id, category, 0, "ERROR_MISSING_SQL"))
             print()
             continue
 
@@ -97,11 +99,16 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
                 flags.append("[ERROR] Query returned 0 rows (empty result set).")
                 error_count += 1
                 zero_row_count += 1
+                id_row_counts.append((q_id, category, 0, "ERROR_ZERO_ROWS"))
 
             # 2. Exactly 100 rows warning
             elif row_count == 100:
                 max_limit_count += 1
                 flags.append("[WARNING] Query returned exactly 100 rows (possible truncation).")
+                id_row_counts.append((q_id, category, row_count, "WARNING_100_ROWS"))
+
+            else:
+                id_row_counts.append((q_id, category, row_count, "OK"))
 
             # 3. ordered=false without ORDER BY returning > 1 row only if full query exceeds LIMIT
             if not ordered and not has_order_by and row_count > 1:
@@ -117,18 +124,25 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
         except Exception as exc:
             error_count += 1
             flags.append(f"[ERROR] Execution failed: {exc}")
+            id_row_counts.append((q_id, category, 0, f"ERROR_EXEC: {exc}"))
 
         for flag in flags:
             print(f"  {flag}")
         print()
 
     print("================================================================================")
+    print("Row Counts by Question ID:")
+    print("--------------------------------------------------------------------------------")
+    for qid, cat, cnt, status in id_row_counts:
+        status_str = f" [{status}]" if "ERROR" in status or "WARNING" in status else ""
+        print(f"  ID {qid:2d} ({cat:<14}): {cnt:3d} rows{status_str}")
+    print("================================================================================")
     print("Summary of Gold Query Verification:")
     print(f"  Total Checked:      {len(success_items)}")
     print(f"  Passed Clean:       {clean_count}")
-    print(f"  Returned 0 Rows:    {zero_row_count}")
+    print(f"  Returned 0 Rows:    {zero_row_count} (Flagged as ERROR)")
     print(f"  Returned 100 Rows:  {max_limit_count}")
-    print(f"  Errors:             {error_count}")
+    print(f"  Total Errors:       {error_count}")
     print("================================================================================")
 
     return 1 if error_count > 0 else 0
