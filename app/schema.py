@@ -1,7 +1,9 @@
 from typing import Any
+
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+
 from app.config import settings
 
 

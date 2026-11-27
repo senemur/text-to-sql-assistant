@@ -1,4 +1,5 @@
 import pytest
+
 from app.config import settings
 from app.schema import (
     ColumnInfo,

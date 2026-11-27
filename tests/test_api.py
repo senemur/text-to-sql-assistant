@@ -1,6 +1,9 @@
+from datetime import UTC
 from unittest.mock import MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
+
 from app.api import app, daily_request_counts, rate_limit_store
 from app.executor import ExecutionResult, PipelineResult
 
@@ -139,8 +142,8 @@ def test_global_daily_request_cap_triggers_429(
     mock_pipeline: MagicMock, client: TestClient
 ) -> None:
     """Verify exceeding DAILY_REQUEST_CAP raises 429 Too Many Requests."""
-    from datetime import datetime, timezone
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import datetime
+    today_str = datetime.now(UTC).strftime("%Y-%m-%d")
 
     # Simulate hitting the daily request limit
     daily_request_counts[today_str] = 1000
@@ -153,6 +156,7 @@ def test_global_daily_request_cap_triggers_429(
 def test_rate_limiter_evicts_stale_ips() -> None:
     """Verify check_rate_limit purges entries older than 60 seconds and cleans up stale IPs."""
     import time
+
     from app.api import check_rate_limit, daily_request_counts
 
     daily_request_counts.clear()
