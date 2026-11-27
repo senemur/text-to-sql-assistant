@@ -1,11 +1,13 @@
-from contextlib import asynccontextmanager
 import time
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any, Literal
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+
 from app.config import settings
 from app.executor import (
     PipelineResult,
@@ -14,8 +16,6 @@ from app.executor import (
     verify_readonly_connection,
 )
 from app.schema import extract_schema, schema_to_prompt
-
-from datetime import datetime, timezone
 
 cached_schema_prompt: str = ""
 rate_limit_store: dict[str, list[float]] = {}
@@ -90,7 +90,7 @@ def check_rate_limit(client_ip: str) -> None:
     2. Per-client-IP window limiter (evicts expired timestamps and stale client IPs).
     """
     now = time.time()
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_str = datetime.now(UTC).strftime("%Y-%m-%d")
 
     # 1. Enforce global daily request cap and evict past days
     stale_days = [d for d in daily_request_counts if d != today_str]
@@ -137,7 +137,7 @@ def health_check() -> HealthResponse:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return HealthResponse(status="healthy", database="connected")
-    except Exception:
+    except Exception:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database service unavailable.",
@@ -155,7 +155,6 @@ def ask_question(payload: AskRequest, request: Request) -> AskResponse:
     client_ip = request.client.host if request.client else "127.0.0.1"
     check_rate_limit(client_ip)
 
-    global cached_schema_prompt
     schema_prompt = cached_schema_prompt
     if not schema_prompt:
         schema = extract_schema()
@@ -167,7 +166,7 @@ def ask_question(payload: AskRequest, request: Request) -> AskResponse:
             schema_prompt=schema_prompt,
             max_retries=settings.MAX_RETRIES,
         )
-    except Exception as exc:
+    except Exception:  # noqa: BLE001
         # Fallback safeguard: never leak internal exceptions or stack traces
         return AskResponse(
             status="failed",

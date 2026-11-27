@@ -1,9 +1,11 @@
-from decimal import Decimal
 import json
+from decimal import Decimal
 from pathlib import Path
+
 import pytest
-from app.schema import DatabaseSchema, TableInfo, ColumnInfo, retrieve_relevant_tables
-from eval.run_eval import compare_result_sets, normalize_value
+
+from app.schema import ColumnInfo, DatabaseSchema, TableInfo, retrieve_relevant_tables
+from eval.run_eval import compare_result_sets
 
 
 def test_dataset_json_structure_and_categories() -> None:
@@ -261,5 +263,66 @@ def test_check_gold_queries_executes_without_errors() -> None:
     from eval.check_gold import check_gold_queries
     exit_code = check_gold_queries("eval/dataset.json")
     assert exit_code == 0
+
+
+def test_rate_limit_error_handling_and_accuracy_exclusion() -> None:
+    """
+    Exercise rate limit path: mock call_llm / run_pipeline to raise 429 repeatedly,
+    assert the evaluation run continues, the sample is counted as 'error',
+    and is excluded from accuracy calculation.
+    """
+    from unittest.mock import patch
+
+    from app.executor import ExecutionResult, PipelineResult
+    from eval.run_eval import run_evaluation
+
+    call_count = 0
+
+    def mock_pipeline(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 3:  # First sample exhausts 3 backoff retries with 429
+            raise Exception("429 RESOURCE_EXHAUSTED: Rate limit exceeded")  # noqa: TRY002
+        return PipelineResult(
+            status="success",
+            question="List all genres.",
+            final_sql="SELECT name FROM genre LIMIT 100;",
+            result=ExecutionResult(
+                columns=["name"],
+                rows=[{"name": "Rock"}],
+                row_count=1,
+                elapsed_ms=1.0,
+                sql_executed="SELECT name FROM genre LIMIT 100;",
+            ),
+            attempts=1,
+            total_latency_ms=10.0,
+        )
+
+    with (
+        patch("eval.run_eval.run_pipeline", side_effect=mock_pipeline),
+        patch("eval.run_eval.execute_gold_query") as mock_gold,
+        patch("time.sleep", return_value=None),
+    ):
+        mock_gold.return_value = ExecutionResult(
+            columns=["name"],
+            rows=[{"name": "Rock"}],
+            row_count=1,
+            elapsed_ms=1.0,
+            sql_executed="SELECT name FROM genre LIMIT 100;",
+        )
+        summary = run_evaluation(
+            limit=2,
+            use_cache=False,
+            sleep_s=0.0,
+        )
+
+        assert summary["total_samples"] == 2
+        assert summary["error_count"] == 1
+        assert summary["evaluable_samples"] == 1
+        assert summary["status_counts"]["error"] == 1
+        assert summary["status_counts"]["success"] == 1
+        # Proves error sample is excluded from accuracy denominator
+        assert summary["overall_accuracy_pct"] == 100.0
+
 
 

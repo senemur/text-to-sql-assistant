@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from app.generator import (
     SQLResponse,
     build_user_prompt,
@@ -52,15 +54,20 @@ Hope this helps!"""
 
 
 def test_parse_invalid_json_raises_value_error() -> None:
-    """Verify invalid JSON raises ValueError with informative message."""
-    invalid_inputs = [
+    """Verify malformed JSON raises ValueError with informative message."""
+    malformed_inputs = [
         "This is not json at all.",
         '{"sql": "SELECT 1", "unclosed": true',
-        '["not", "a", "dict"]',
     ]
-    for inp in invalid_inputs:
+    for inp in malformed_inputs:
         with pytest.raises(ValueError):
             parse_sql_response(inp)
+
+
+def test_parse_non_dict_json_raises_type_error() -> None:
+    """Verify valid JSON that is not a dict raises TypeError."""
+    with pytest.raises(TypeError):
+        parse_sql_response('["not", "a", "dict"]')
 
 
 def test_build_user_prompt_includes_error_feedback() -> None:

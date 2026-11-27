@@ -1,9 +1,11 @@
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
+
 import sqlglot
 from sqlglot import exp
+
 from app.executor import execute_query
 
 
@@ -17,7 +19,7 @@ def check_if_query_exceeds_limit(sql: str, row_count: int) -> tuple[bool, int]:
         count_res = execute_query(count_sql, max_limit=1)
         total_available = int(count_res.rows[0]["total"])
         return (total_available > row_count, total_available)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return (False, row_count)
 
 
@@ -83,7 +85,7 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
         try:
             ast = sqlglot.parse_one(gold_sql, read="postgres")
             has_order_by = ast.find(exp.Order) is not None
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         flags: list[str] = []
@@ -121,7 +123,7 @@ def check_gold_queries(dataset_path: str = "eval/dataset.json") -> int:
             if not any("[ERROR]" in f for f in flags) and not any("[WARNING]" in f for f in flags):
                 clean_count += 1
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             error_count += 1
             flags.append(f"[ERROR] Execution failed: {exc}")
             id_row_counts.append((q_id, category, 0, f"ERROR_EXEC: {exc}"))

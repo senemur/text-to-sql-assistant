@@ -165,8 +165,8 @@
     "id": 18,
     "category": "join",
     "style": "natural",
-    "question": "Show the artist name, album title, and track name for tracks composed by 'AC/DC'.",
-    "gold_sql": "SELECT ar.name AS artist_name, al.title AS album_title, t.name AS track_name FROM track t JOIN album al ON t.album_id = al.album_id JOIN artist ar ON al.artist_id = ar.artist_id WHERE t.composer = 'AC/DC' LIMIT 100;",
+    "question": "Show the artist name, album title, and track name for tracks by the artist 'AC/DC'.",
+    "gold_sql": "SELECT ar.name AS artist_name, al.title AS album_title, t.name AS track_name FROM track t JOIN album al ON t.album_id = al.album_id JOIN artist ar ON al.artist_id = ar.artist_id WHERE ar.name = 'AC/DC' LIMIT 100;",
     "ordered": false,
     "expected_status": "success"
   },

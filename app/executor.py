@@ -1,16 +1,18 @@
-from datetime import date, datetime, timezone
-from decimal import Decimal
 import json
-from pathlib import Path
 import re
 import time
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import DBAPIError, SQLAlchemyError
+from sqlalchemy.exc import DBAPIError
+
 from app.config import settings
-from app.generator import LLMResult, SQLResponse, generate_sql
+from app.generator import SQLResponse, generate_sql
 from app.validator import (
     PolicyViolationError,
     QuerySyntaxError,
@@ -32,7 +34,7 @@ class ExecutionResult(BaseModel):
 
 
 class PipelineResult(BaseModel):
-    status: Literal["success", "needs_clarification", "blocked", "failed"]
+    status: Literal["success", "needs_clarification", "blocked", "failed", "error"]
     question: str
     final_sql: str | None = None
     explanation: str | None = None
@@ -128,16 +130,16 @@ def sanitize_error_message(exc: Exception) -> str:
     Strips raw database credentials, connection strings, hostnames, and internal row dumps.
     """
     if isinstance(exc, PolicyViolationError):
-        return f"Policy Violation: {str(exc)}"
+        return f"Policy Violation: {exc!s}"
 
     if is_insufficient_privilege(exc):
         return "Security Policy Violation: Database access denied due to insufficient privileges (SQLSTATE 42501)."
 
     if isinstance(exc, QuerySyntaxError):
-        return f"SQL Syntax Error: {str(exc)}"
+        return f"SQL Syntax Error: {exc!s}"
 
     if isinstance(exc, ValidationError):
-        return f"Validation Error: {str(exc)}"
+        return f"Validation Error: {exc!s}"
 
     raw_msg = str(exc)
     if isinstance(exc, DBAPIError) and hasattr(exc, "orig") and exc.orig is not None:
@@ -204,9 +206,8 @@ def execute_query(
     start_time = time.perf_counter()
 
     try:
-        with eng.connect() as conn:
-            with conn.begin():
-                # Enforce read-only transaction and statement timeout
+        with eng.connect() as conn, conn.begin():
+            # Enforce read-only transaction and statement timeout
                 conn.execute(text("SET TRANSACTION READ ONLY;"))
                 conn.execute(
                     text(f"SET LOCAL statement_timeout = '{settings.STATEMENT_TIMEOUT_MS}ms';")
@@ -271,7 +272,7 @@ def log_attempt(
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "attempt": attempt,
         "question": question,
         "generated_sql": generated_sql,
@@ -460,7 +461,7 @@ def run_pipeline(
                 total_ms=attempt_elapsed,
             )
 
-        except Exception as db_err:
+        except Exception as db_err:  # noqa: BLE001
             if is_insufficient_privilege(db_err):
                 # SQLSTATE 42501 (insufficient_privilege) terminates IMMEDIATELY with status="blocked".
                 # Never retried, never sent to the LLM.

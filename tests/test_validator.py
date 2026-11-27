@@ -1,13 +1,11 @@
 import pytest
+
 from app.validator import (
     PolicyViolationError,
-    QuerySyntaxError,
     ValidationError,
     validate_and_format_sql,
     validate_sql,
 )
-from app.config import settings
-
 
 # ==============================================================================
 # 1. PARAMETRIZED ATTACK & VIOLATION TESTS (Must ALL raise ValidationError)
@@ -19,10 +17,8 @@ BLOCKED_TEST_CASES = [
     ("SELECT row_to_json(c) FROM customer c", "Forbidden function"),
     ("SELECT COUNT(*) FROM customer WHERE email LIKE 'a%'", "blocked sensitive column"),
     ("SELECT first_name FROM customer ORDER BY email", "blocked sensitive column"),
-    ("SELECT * FROM invoice JOIN customer USING (customer_id)", "Wildcard '*' projection"),
     ("SELECT * FROM pg_ls_dir('/')", "Forbidden function"),
     ("SELECT query_to_xml('select 1', true, true, '')", "Forbidden function"),
-    ("SELECT * FROM public.customer", "Wildcard '*' projection"),
     ("SELECT * FROM artist FOR UPDATE", "Forbidden statement or clause 'Lock'"),
     ("SELECT * INTO newt FROM artist", "Forbidden statement or clause 'Into'"),
     ("WITH d AS (DELETE FROM artist RETURNING *) SELECT * FROM d", "Forbidden statement or clause 'Delete'"),
@@ -52,8 +48,6 @@ BLOCKED_TEST_CASES = [
     ("SELECT first_name FROM employee ORDER BY birth_date", "blocked sensitive column"),
     ("SELECT e FROM employee e", "Whole-row reference"),
     ("SELECT employee FROM employee", "Whole-row reference"),
-    ("SELECT * FROM employee", "Wildcard '*' projection"),
-    ("SELECT e.* FROM employee e", "Wildcard '*' projection"),
 
     # --- Whole-Row & Unsafe JSON Serialization ---
     ("SELECT customer FROM customer", "Whole-row reference"),
@@ -288,5 +282,43 @@ def test_case_when_pg_sleep_raises_policy_violation() -> None:
     query = "SELECT CASE WHEN pg_sleep(1) IS NULL THEN 1 ELSE 0 END FROM artist"
     with pytest.raises(PolicyViolationError):
         validate_and_format_sql(query)
+
+
+def test_wildcard_expansion_employee() -> None:
+    """Verify SELECT * FROM employee expands to allowed columns and excludes blocked columns."""
+    sql = "SELECT * FROM employee"
+    rewritten = validate_and_format_sql(sql)
+    for blocked in ["email", "phone", "fax", "address", "birth_date", "postal_code"]:
+        assert blocked not in rewritten.lower()
+    for allowed in ["employee_id", "last_name", "first_name", "title", "reports_to", "hire_date", "city", "state", "country"]:
+        assert allowed in rewritten.lower()
+
+
+def test_wildcard_expansion_invoice() -> None:
+    """Verify SELECT * FROM invoice expands to allowed columns and excludes blocked columns."""
+    sql = "SELECT * FROM invoice"
+    rewritten = validate_and_format_sql(sql)
+    for blocked in ["billing_address", "billing_postal_code"]:
+        assert blocked not in rewritten.lower()
+    for allowed in ["invoice_id", "customer_id", "invoice_date", "billing_city", "billing_state", "billing_country", "total"]:
+        assert allowed in rewritten.lower()
+
+
+def test_wildcard_expansion_customer_join_invoice() -> None:
+    """Verify SELECT * FROM customer JOIN invoice expands both tables without blocked columns."""
+    sql = "SELECT * FROM customer JOIN invoice ON customer.customer_id = invoice.customer_id"
+    rewritten = validate_and_format_sql(sql)
+    for blocked in ["email", "phone", "fax", "address", "postal_code", "billing_address", "billing_postal_code"]:
+        assert blocked not in rewritten.lower()
+    for allowed in ["customer_id", "first_name", "last_name", "invoice_id", "total"]:
+        assert allowed in rewritten.lower()
+
+
+def test_whole_row_reference_still_blocked() -> None:
+    """Verify whole-row references on restricted tables are still strictly blocked."""
+    for sql in ["SELECT c FROM customer c", "SELECT e FROM employee e", "SELECT employee FROM employee", "SELECT customer FROM customer"]:
+        with pytest.raises(PolicyViolationError, match="Whole-row reference"):
+            validate_and_format_sql(sql)
+
 
 

@@ -1,11 +1,11 @@
 import sqlglot
 from sqlglot import exp
+
 from app.config import settings
 
 
 class ValidationError(Exception):
     """Base exception for SQL query validation failures."""
-    pass
 
 
 class PolicyViolationError(ValidationError):
@@ -18,12 +18,10 @@ class PolicyViolationError(ValidationError):
     - Whole-row references or wildcards on sensitive tables
     - CTE shadowing of base database tables
     """
-    pass
 
 
 class QuerySyntaxError(ValidationError):
     """Raised when an SQL query has syntax errors that can be retried by the LLM."""
-    pass
 
 
 SAFE_FUNCTIONS: set[str] = {
@@ -89,6 +87,7 @@ def validate_sql(
     sql: str,
     allowed_tables: set[str],
     blocked_columns: dict[str, set[str]],
+    table_columns: dict[str, list[str]] | None = None,
     dialect: str = "postgres",
     max_limit: int = 100,
 ) -> str:
@@ -100,8 +99,9 @@ def validate_sql(
     4. Safe function allowlist (rejects unknown and table-valued functions).
     5. Table allowlist (handling CTE names and public schema qualification).
     6. Strict column security on EVERY exp.Column (SELECT, WHERE, ORDER BY, GROUP BY, HAVING, JOIN ON).
-    7. Whole-row references and bare '*' rejection on tables with blocked columns.
-    8. Handles LIMIT, FETCH FIRST, LIMIT ALL, expression limits, applying limit to whole result.
+    7. Whole-row references rejection on tables with blocked columns.
+    8. Wildcard '*' expansion to allowed columns of every table in scope (handling aliases & joins).
+    9. Handles LIMIT, FETCH FIRST, LIMIT ALL, expression limits, applying limit to whole result.
     """
     cleaned_sql = sql.strip()
     if not cleaned_sql:
@@ -225,7 +225,7 @@ def validate_sql(
     for col_node in ast.find_all(exp.Column):
         col_name = col_node.name.lower()
         # If an unqualified identifier matches a restricted table's alias, it is a whole-row reference
-        if not col_node.table and col_name in restricted_aliases:
+        if not col_node.table and col_name in restricted_aliases and not isinstance(col_node.this, exp.Star):
             raise PolicyViolationError(
                 f"Whole-row reference '{col_name}' to restricted table "
                 f"'{restricted_aliases[col_name]}' is prohibited."
@@ -250,18 +250,52 @@ def validate_sql(
                         f"Access to blocked sensitive column '{col_name}' on table '{tbl}' is prohibited."
                     )
 
-    # 8. Wildcard SELECT '*' check: reject when ANY restricted table appears in FROM/JOIN
-    # COUNT(*) is completely safe and allowed; raw column '*' projection on sensitive tables is blocked.
-    sensitive_tables_present = referenced_tables & tables_with_blocked_cols
-    if sensitive_tables_present:
-        for star_node in ast.find_all(exp.Star):
-            if isinstance(star_node.parent, exp.Count):
-                continue  # COUNT(*) is safe
-            sensitive_list = ", ".join(sorted(sensitive_tables_present))
-            raise PolicyViolationError(
-                f"Wildcard '*' projection is prohibited when sensitive tables ({sensitive_list}) "
-                f"are present in the query. Please specify explicit allowed columns."
-            )
+    # 8. Wildcard '*' expansion to allowed columns of every table in scope (handling aliases & joins)
+    # Rather than rejecting SELECT * on tables with blocked columns, expand it to allowed columns only.
+    cols_source = table_columns if table_columns is not None else settings.CHINOOK_TABLE_COLUMNS
+    allowed_cols_by_table: dict[str, list[str]] = {
+        tbl.lower(): [c for c in cols if c.lower() not in norm_blocked_cols.get(tbl.lower(), set())]
+        for tbl, cols in cols_source.items()
+    }
+
+    for select in ast.find_all(exp.Select):
+        tables_in_scope: list[tuple[str, str, bool]] = []
+        from_node = select.args.get("from_")
+        if from_node and isinstance(from_node.this, exp.Table):
+            t_name = from_node.this.name.lower()
+            t_alias = from_node.this.alias.lower() if from_node.this.alias else t_name
+            tables_in_scope.append((t_name, t_alias, bool(from_node.this.alias)))
+        for join in select.args.get("joins", []):
+            if isinstance(join.this, exp.Table):
+                t_name = join.this.name.lower()
+                t_alias = join.this.alias.lower() if join.this.alias else t_name
+                tables_in_scope.append((t_name, t_alias, bool(join.this.alias)))
+
+        new_exprs: list[exp.Expression] = []
+        for expr in select.expressions:
+            if isinstance(expr, exp.Star):
+                # Bare wildcard: expand across all tables in scope for this SELECT
+                for t_name, t_alias, has_alias in tables_in_scope:
+                    cols = allowed_cols_by_table.get(t_name, [])
+                    tbl_qual = t_alias if (len(tables_in_scope) > 1 or has_alias) else None
+                    for col in cols:
+                        new_exprs.append(exp.column(col, table=tbl_qual))
+            elif isinstance(expr, exp.Column) and isinstance(expr.this, exp.Star):
+                # Qualified wildcard: e.g. e.* or customer.*
+                target_alias = expr.table.lower()
+                matched_t = next(
+                    (tbl for tbl, alias, _ in tables_in_scope if alias == target_alias or tbl == target_alias),
+                    None,
+                )
+                if matched_t:
+                    cols = allowed_cols_by_table.get(matched_t, [])
+                    for col in cols:
+                        new_exprs.append(exp.column(col, table=target_alias))
+                else:
+                    new_exprs.append(expr)
+            else:
+                new_exprs.append(expr)
+        select.set("expressions", new_exprs)
 
     # 9. LIMIT and FETCH FIRST handling: clamp or auto-add
     # A) Clamp all FETCH FIRST clauses in AST
@@ -302,6 +336,7 @@ def validate_and_format_sql(sql: str, max_limit: int = 100) -> str:
         sql=sql,
         allowed_tables=settings.CHINOOK_TABLES,
         blocked_columns=settings.BLOCKED_COLUMNS,
+        table_columns=settings.CHINOOK_TABLE_COLUMNS,
         dialect="postgres",
         max_limit=max_limit,
     )

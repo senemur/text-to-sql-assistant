@@ -1,14 +1,16 @@
 import argparse
-from datetime import datetime, timezone
-from decimal import Decimal
 import hashlib
-from itertools import combinations
 import json
-import math
-from pathlib import Path
+import re
 import time
+from datetime import UTC, datetime
+from decimal import Decimal
+from itertools import combinations
+from pathlib import Path
 from typing import Any
+
 from sqlalchemy import create_engine, text
+
 from app.config import settings
 from app.executor import (
     ExecutionResult,
@@ -17,7 +19,7 @@ from app.executor import (
     get_executor_engine,
     run_pipeline,
 )
-from app.generator import LLMResult, SQLResponse, get_system_prompt
+from app.generator import get_system_prompt
 from app.schema import extract_schema, retrieve_relevant_tables, schema_to_prompt
 
 CACHE_PATH = Path("eval/cache.json")
@@ -73,9 +75,9 @@ def get_real_blocked_values() -> dict[str, str]:
                                 s_val = str(val).strip().lower()
                                 if s_val:
                                     blocked_values[s_val] = f"{tbl}.{col}"
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Warning: Could not fetch real blocked values via admin URL: {e}")
     finally:
         admin_engine.dispose()
@@ -112,7 +114,7 @@ def normalize_value(val: Any) -> Any:
     if isinstance(val, (int, float, Decimal)):
         try:
             return round(float(val), 3)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return float(val)
     if isinstance(val, str):
         cleaned = val.strip().lower()
@@ -148,7 +150,7 @@ def extract_sort_key_values(
     if not isinstance(first_row, dict):
         return None
 
-    col_map = {str(k).lower(): k for k in first_row.keys()}
+    col_map = {str(k).lower(): k for k in first_row}
     resolved_keys = []
     for sk in sort_keys:
         sk_lower = sk.lower()
@@ -234,12 +236,19 @@ def compare_result_sets(
 
             # Find an injective assignment of distinct predicted columns
             # preserving multi-column row tuple alignment
-            def search_assignment(idx: int, used_p: set[str], current_p: list[str]) -> bool:
-                if idx == r:
+            def search_assignment(
+                idx: int,
+                used_p: set[str],
+                current_p: list[str],
+                r_len: int = r,
+                target_g_cols: list[str] = g_cols,
+                target_candidates: list[list[str]] = candidates_per_g,
+            ) -> bool:
+                if idx == r_len:
                     if ordered:
                         return True
                     g_tuples = sorted(
-                        [tuple(normalize_value(row.get(g)) for g in g_cols) for row in gold_rows],
+                        [tuple(normalize_value(row.get(g)) for g in target_g_cols) for row in gold_rows],
                         key=str,
                     )
                     p_tuples = sorted(
@@ -248,11 +257,11 @@ def compare_result_sets(
                     )
                     return g_tuples == p_tuples
 
-                for p_cand in candidates_per_g[idx]:
+                for p_cand in target_candidates[idx]:
                     if p_cand not in used_p:
                         used_p.add(p_cand)
                         current_p.append(p_cand)
-                        if search_assignment(idx + 1, used_p, current_p):
+                        if search_assignment(idx + 1, used_p, current_p, r_len, target_g_cols, target_candidates):
                             return True
                         current_p.pop()
                         used_p.remove(p_cand)
@@ -280,7 +289,7 @@ def compare_result_sets(
                         sorted(gold_sort_vals, key=lambda r: str(r))
                         == sorted(pred_sort_vals, key=lambda r: str(r))
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001
                     sort_keys_match = False
 
             if not sort_keys_match:
@@ -314,7 +323,7 @@ def load_cache() -> dict[str, Any]:
     if CACHE_PATH.exists():
         try:
             return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception:  # noqa: BLE001
             return {}
     return {}
 
@@ -338,7 +347,7 @@ def run_evaluation(
     schema_retrieval: bool = False,
     limit: int | None = None,
     use_cache: bool = True,
-    sleep_s: float = 4.0,
+    sleep_s: float = 8.0,
 ) -> dict[str, Any]:
     """
     Run evaluation benchmark over the dataset under specified configuration.
@@ -375,13 +384,12 @@ def run_evaluation(
         "error": 0,
     }
 
-    print(f"\n================================================================================")
+    print("\n================================================================================")
     print(f"Running Evaluation: {config_name} (Model: {model_name})")
     print(f"Flags: few_shot={few_shot}, self_correction={self_correction}, schema_retrieval={schema_retrieval}, use_cache={use_cache}, sleep_s={sleep_s}")
     print(f"Total samples: {len(items)}")
-    print(f"================================================================================\n")
+    print("================================================================================\n")
 
-    interrupted = False
     try:
         for i, item in enumerate(items, 1):
             q_id = item["id"]
@@ -432,9 +440,9 @@ def run_evaluation(
                 cached_data = cache[cache_key]
                 pipeline_res = PipelineResult.model_validate(cached_data)
             else:
-                max_backoff_retries = 3
-                backoff_delay = 2.0
-                for retry_i in range(max_backoff_retries):
+                backoff_delays = [15.0, 30.0, 60.0]
+                max_backoff_retries = len(backoff_delays)
+                for retry_i, backoff_delay in enumerate(backoff_delays):
                     try:
                         pipeline_res = run_pipeline(
                             question=question,
@@ -444,12 +452,11 @@ def run_evaluation(
                             self_correction=self_correction,
                         )
                         break
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         err_msg = str(exc).lower()
                         if "429" in err_msg or "resource_exhausted" in err_msg or "quota" in err_msg:
                             print(f"Rate limited on Q{q_id}. Backing off {backoff_delay}s (retry {retry_i+1}/{max_backoff_retries})...")
                             time.sleep(backoff_delay)
-                            backoff_delay *= 2.0
                         else:
                             if retry_i == max_backoff_retries - 1:
                                 print(f"Error on Q{q_id} after {max_backoff_retries} attempts: {exc}")
@@ -460,6 +467,7 @@ def run_evaluation(
                     # Retries exhausted - do NOT crash; mark as error and continue
                     pipeline_res = PipelineResult(
                         status="error",
+                        question=question,
                         error="Rate limit or LLM provider error: retries exhausted",
                         final_sql=None,
                         attempts=max_backoff_retries,
@@ -539,7 +547,7 @@ def run_evaluation(
                             failure_reason = (
                                 f"Result set mismatch (Gold: {gold_res.row_count} rows, Pred: {pipeline_res.result.row_count} rows)"
                             )
-                    except Exception as gold_exc:
+                    except Exception as gold_exc:  # noqa: BLE001
                         is_correct = False
                         failure_reason = f"Error executing gold query: {gold_exc}"
 
@@ -581,7 +589,6 @@ def run_evaluation(
             )
 
     except (KeyboardInterrupt, SystemExit):
-        interrupted = True
         print("\n[INTERRUPTED] Evaluation was interrupted.")
         failures = [r for r in results if not r["correct"]]
         print_failure_details(failures)
@@ -590,7 +597,7 @@ def run_evaluation(
             try:
                 # If file is empty or recent
                 pass
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         raise
 
@@ -619,7 +626,7 @@ def run_evaluation(
     summary = {
         "config": config_name,
         "model": model_name,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "total_samples": total_samples,
         "evaluable_samples": evaluable_samples,
         "error_count": error_count,
@@ -663,7 +670,7 @@ def run_evaluation(
     }
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    ts_slug = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts_slug = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     out_file = RESULTS_DIR / f"eval_{config_name}_{ts_slug}.json"
     out_file.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nSaved evaluation results to {out_file}")
@@ -785,7 +792,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="Limit number of samples evaluated.")
     parser.add_argument("--runs", type=int, default=1, help="Number of runs to repeat uncached (default 1).")
     parser.add_argument("--no-cache", action="store_true", help="Force ignore cache.")
-    parser.add_argument("--sleep", type=float, default=4.0, help="Sleep seconds between LLM calls (default 4.0).")
+    parser.add_argument("--sleep", type=float, default=8.0, help="Sleep seconds between LLM calls (default 8.0).")
     args = parser.parse_args()
 
     configs = {

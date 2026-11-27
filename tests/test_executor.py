@@ -1,21 +1,18 @@
-from decimal import Decimal
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
-from sqlalchemy import create_engine, text
-from app.config import settings
+
 from app.executor import (
     ExecutionResult,
-    PipelineResult,
     execute_query,
     run_pipeline,
     sanitize_error_message,
     verify_readonly_connection,
 )
 from app.generator import LLMResult
-from app.validator import PolicyViolationError, ValidationError
-
+from app.validator import PolicyViolationError
 
 # ==============================================================================
 # 1. DIRECT EXECUTOR SECURITY & READ-ONLY ROLE TESTS
@@ -33,7 +30,7 @@ def test_executor_rejects_handcrafted_injections() -> None:
         execute_query("SELECT 1; DROP TABLE artist;")
 
     with pytest.raises(PolicyViolationError):
-        execute_query("SELECT * FROM customer")
+        execute_query("SELECT customer FROM customer")
 
 
 @pytest.mark.integration
